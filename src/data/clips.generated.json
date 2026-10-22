@@ -1,0 +1,202 @@
+{
+  "sources": [
+    {
+      "key": "yt_test_1",
+      "lang": "en",
+      "duration": 776.34,
+      "preview": "/media/yt_test_1/source-preview.mp4",
+      "poster": "/media/yt_test_1/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 70,
+          "scores": {
+            "hook": 75,
+            "value": 40,
+            "emotion": 80,
+            "standalone": 90,
+            "quotability": 70,
+            "clarity": 85
+          },
+          "type": "Highlight",
+          "sourceStart": 0.031,
+          "sourceEnd": 39.485,
+          "duration": 39.49,
+          "video": "/media/yt_test_1/clips/h01.mp4",
+          "preview": "/media/yt_test_1/clips/h01-preview.mp4",
+          "poster": "/media/yt_test_1/clips/h01.jpg"
+        }
+      ]
+    },
+    {
+      "key": "yt_test_2",
+      "lang": "en",
+      "duration": 2829.63,
+      "preview": "/media/yt_test_2/source-preview.mp4",
+      "poster": "/media/yt_test_2/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 87,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 75,
+            "standalone": 90,
+            "quotability": 88,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 1176.59,
+          "sourceEnd": 1283.071,
+          "duration": 106.58,
+          "video": "/media/yt_test_2/clips/h01.mp4",
+          "preview": "/media/yt_test_2/clips/h01-preview.mp4",
+          "poster": "/media/yt_test_2/clips/h01.jpg"
+        },
+        {
+          "id": "h02",
+          "score": 87,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 70,
+            "standalone": 90,
+            "quotability": 88,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 2618.963,
+          "sourceEnd": 2808.638,
+          "duration": 189.77,
+          "video": "/media/yt_test_2/clips/h02.mp4",
+          "preview": "/media/yt_test_2/clips/h02-preview.mp4",
+          "poster": "/media/yt_test_2/clips/h02.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 81,
+          "scores": {
+            "hook": 75,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 85,
+            "quotability": 85,
+            "clarity": 90
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 1445.527,
+          "sourceEnd": 1602.025,
+          "duration": 156.67,
+          "video": "/media/yt_test_2/clips/h05.mp4",
+          "preview": "/media/yt_test_2/clips/h05-preview.mp4",
+          "poster": "/media/yt_test_2/clips/h05.jpg"
+        },
+        {
+          "id": "h07",
+          "score": 80,
+          "scores": {
+            "hook": 75,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 85,
+            "quotability": 80,
+            "clarity": 90
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 2361.704,
+          "sourceEnd": 2617.732,
+          "duration": 256.15,
+          "video": "/media/yt_test_2/clips/h07.mp4",
+          "preview": "/media/yt_test_2/clips/h07-preview.mp4",
+          "poster": "/media/yt_test_2/clips/h07.jpg"
+        },
+        {
+          "id": "h08",
+          "score": 80,
+          "scores": {
+            "hook": 75,
+            "value": 85,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 90
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 1284.033,
+          "sourceEnd": 1444.193,
+          "duration": 160.22,
+          "video": "/media/yt_test_2/clips/h08.mp4",
+          "preview": "/media/yt_test_2/clips/h08-preview.mp4",
+          "poster": "/media/yt_test_2/clips/h08.jpg"
+        },
+        {
+          "id": "h10",
+          "score": 77,
+          "scores": {
+            "hook": 75,
+            "value": 85,
+            "emotion": 40,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 237.935,
+          "sourceEnd": 280.544,
+          "duration": 42.64,
+          "video": "/media/yt_test_2/clips/h10.mp4",
+          "preview": "/media/yt_test_2/clips/h10-preview.mp4",
+          "poster": "/media/yt_test_2/clips/h10.jpg"
+        }
+      ]
+    },
+    {
+      "key": "yt_test_4",
+      "lang": "en",
+      "duration": 913.12,
+      "preview": "/media/yt_test_4/source-preview.mp4",
+      "poster": "/media/yt_test_4/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h03",
+          "score": 71,
+          "scores": {
+            "hook": 62,
+            "value": 82,
+            "emotion": 45,
+            "standalone": 78,
+            "quotability": 73,
+            "clarity": 88
+          },
+          "type": "Highlight",
+          "sourceStart": 521.772,
+          "sourceEnd": 574.102,
+          "duration": 52.36,
+          "video": "/media/yt_test_4/clips/h03.mp4",
+          "preview": "/media/yt_test_4/clips/h03-preview.mp4",
+          "poster": "/media/yt_test_4/clips/h03.jpg"
+        },
+        {
+          "id": "h04",
+          "score": 61,
+          "scores": {
+            "hook": 68,
+            "value": 72,
+            "emotion": 63,
+            "standalone": 70,
+            "quotability": 74,
+            "clarity": 86
+          },
+          "type": "Highlight",
+          "sourceStart": 179.294,
+          "sourceEnd": 237.074,
+          "duration": 55.38,
+          "video": "/media/yt_test_4/clips/h04.mp4",
+          "preview": "/media/yt_test_4/clips/h04-preview.mp4",
+          "poster": "/media/yt_test_4/clips/h04.jpg"
+        }
+      ]
+    }
+  ]
+}
