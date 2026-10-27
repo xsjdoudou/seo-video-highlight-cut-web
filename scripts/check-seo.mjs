@@ -58,11 +58,11 @@ try {
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(`协议是 ${parsed.protocol}`)
   ok(`${parsed.protocol}//${parsed.hostname}:${parsed.port || '(默认)'}`)
 
-  // 端口只在指向远端时才有讲究。本机联调用 8649 是对的，国内那台机器上
-  // seo_server.py 的默认端口就是它；跨境走的才必须是安全组放通的 10080。
+  // 端口只在**直连**国内那台时才有讲究。指向本机有两种正常情况：本机联调，
+  // 或者走 SSH 反向隧道（推荐，见 README）——隧道那头才是国内的服务。
   const isLocal = ['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)
   if (isLocal) {
-    ok('指向本机，端口不做要求')
+    ok('指向本机：要么是本机联调，要么是走 SSH 反向隧道。端口不做要求')
   } else if (!parsed.port && parsed.protocol === 'http:') {
     bad(
       '没写端口',
@@ -94,10 +94,19 @@ if (!parsed) {
       bad(`HTTP ${res.status}`, `响应体：${res.body}`)
     }
   } catch (error) {
+    const isLocal = ['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)
     bad(
       `连不上：${error.message}`,
-      '按顺序查：国内的服务起了吗（SEO_PORT=10080 python seo_server.py）；' +
-        '安全组放通 10080 了吗；端口写对了吗。',
+      isLocal
+        ? // 指向本机却连不上，隧道方案里基本只有一个原因。
+          '走隧道的话：到国内那台上 systemctl status seo-tunnel 看隧道挂没挂住。' +
+            '隧道断了这里就是 connection refused / 超时。' +
+            '隧道是好的就查国内本机的服务：curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:10080/health_check'
+        : // 直连国内 EIP。超时和拒绝是两回事，分开说。
+          '超时 = 包被丢了，多半是阿里云安全组入方向没放通这个端口（没权限改的话' +
+            '改走 SSH 反向隧道，见 README「连不上又改不了安全组」）；' +
+            '连接被拒绝 = 包到了但没人监听，去国内那台确认服务起没起' +
+            '（SEO_PORT=10080 python seo_server.py）。',
     )
   }
 }
