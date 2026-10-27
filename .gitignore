@@ -17,6 +17,11 @@ data
 # 本地运行脚本可能包含真实凭证
 bash.sh
 
+# 真实凭证只放这里，永远不提交。.env.example 是空模板，要跟着仓库走。
+.env
+.env.*
+!.env.example
+
 # Python bytecode
 __pycache__/
 *.py[cod]

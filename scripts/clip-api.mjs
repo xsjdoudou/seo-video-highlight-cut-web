@@ -13,7 +13,7 @@
 //
 // 用户、充值、消费、资产四份文件在 scripts/store.mjs。
 //
-// 后台流水线：去字幕（可选）→ POST /v1/seo（服务端内部完成腾讯 ASR）→ 烧字幕（可选）。
+// 后台流水线：去字幕（可选）→ 提交 /v1/seo 并轮询（服务端内部完成腾讯 ASR）→ 烧字幕（可选）。
 //
 // 零依赖，只用 node 内置模块 + ffmpeg。
 //
@@ -26,11 +26,31 @@
 //   PUBLIC_BASE     给下游服务的下载地址前缀 默认 http://127.0.0.1:10050（vite dev）
 //   SEO_URL         高光剪辑服务            默认 http://127.0.0.1:8649
 //   SEO_PATH        接口路径                默认 /v1/seo
+//   SEO_TOKEN       剪辑服务鉴权令牌        默认空（服务端也没配时才可以留空）
+//   SEO_POLL_INTERVAL_MS   轮询间隔         默认 5000
+//   SEO_REQUEST_TIMEOUT_MS 单次请求超时     默认 30000
+//   SEO_TASK_TIMEOUT_MS    整个任务的上限   默认 2 小时
+//   SEO_POLL_MAX_ERRORS    连续查询失败多少次才算任务断了 默认 10
 //   DESUB_URL       去字幕服务（没设就跳过这一步）
 //   DESUB_TOKEN     去字幕鉴权
 //   UPLOAD_DIR      落盘目录                默认 <repo>/.uploads
 //
+// OSS 上传（scripts/oss_upload.py，细节见那个文件开头）：
+//   OSS_AK / OSS_SK / OSS_ENDPOINT / OSS_BUCKET / OSS_CDN_URL
+//                   都设齐了就直接用，不碰 Nacos；缺任何一个就退回去借
+//                   OSS_UTILS_REPO 那个仓库的 Nacos 配置。
+//   OSS_UTILS_REPO  上面那条兜底路径用的仓库，环境变量齐了就不需要它存在
+//   OSS_PREFIX      对象名前缀
+//   OSS_PYTHON      跑上传脚本的解释器      默认 python3
+//
 // 腾讯云 ASR 由 SEO 服务负责，需要在 SEO 服务进程中配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY。
+//
+// 这一层和剪辑服务之间只传 JSON，视频字节走 OSS，所以两者可以不在同一台机器、
+// 甚至不在同一个国家。跨境部署时除了把 SEO_URL 指过去，还要注意两件事：
+//   1. OSS_ENDPOINT 必须用公网接入点（oss-cn-*.aliyuncs.com），
+//      默认那套 Nacos 配置给的是 -internal 的内网接入点，VPC 外面连不上。
+//   2. 上面那组 OSS_* 必须设齐，因为 Nacos 本身也只在内网可达。
+//      部署完先跑 `python3 scripts/oss_upload.py --check` 确认凭证读得到。
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -60,7 +80,17 @@ const CLIP_API_PORT = Number(process.env.CLIP_API_PORT ?? 10051)
 const PUBLIC_BASE = (process.env.PUBLIC_BASE ?? 'http://127.0.0.1:10050').replace(/\/+$/, '')
 const SEO_URL = (process.env.SEO_URL ?? 'http://127.0.0.1:8649').replace(/\/+$/, '')
 const SEO_PATH = process.env.SEO_PATH ?? '/v1/seo'
+// 剪辑服务的访问令牌。两边都留空只适合本机联调；跨境部署时 SEO_URL 指向公网，
+// 这里和服务端的 SEO_TOKEN 必须一起配上，否则等于把那台机器的 GPU 开放给所有人。
+const SEO_TOKEN = process.env.SEO_TOKEN ?? ''
+// 轮询参数。跨境链路上单次请求必须短，任务总时长才可以很长。
+const SEO_POLL_INTERVAL_MS = Number(process.env.SEO_POLL_INTERVAL_MS ?? 5000)
+const SEO_REQUEST_TIMEOUT_MS = Number(process.env.SEO_REQUEST_TIMEOUT_MS ?? 30000)
+const SEO_TASK_TIMEOUT_MS = Number(process.env.SEO_TASK_TIMEOUT_MS ?? 2 * 60 * 60 * 1000)
+// 丢几次轮询是跨境链路的常态，连续失败这么多次才判定任务真的断了。
+const SEO_POLL_MAX_ERRORS = Number(process.env.SEO_POLL_MAX_ERRORS ?? 10)
 // TODO: 暂时借 A-jogg-video-understanding 的 OSS 配置，后面换成正式的桶/路径时改这里。
+// 只在凭证要从 Nacos 取时才需要；OSS_AK/OSS_SK/... 都设好了的话这个仓库不用存在。
 const OSS_UTILS_REPO = path.resolve(
   process.env.OSS_UTILS_REPO ?? '/datadisk1/xieshiji/code/A-jogg-video-understanding/jogg-video-understanding',
 )
@@ -113,6 +143,7 @@ function shortId(id) {
 /** 启动时把接到哪些下游、文件落在哪打一遍，省得猜配置有没有生效。 */
 function printBanner() {
   log(`下游剪辑服务: ${SEO_URL}${SEO_PATH}（服务端内部腾讯云 ASR）`)
+  log(`剪辑服务鉴权: ${SEO_TOKEN ? '已配置 SEO_TOKEN' : '(未配置，只适合本机联调)'}`)
   log(`去字幕服务:   ${DESUB_URL || '(未接入，开关打开也会跳过)'}`)
   log(`下载地址前缀: ${PUBLIC_BASE}`)
   log(`落盘目录:     ${UPLOAD_DIR}`)
@@ -193,10 +224,13 @@ function sendJson(res, status, body) {
 }
 
 /**
- * JSON over http(s)，不设超时：/v1/seo 是同步接口，整条流水线跑完才返回，
- * 动辄几分钟到几十分钟，undici 默认的 5 分钟 headers timeout 会把它掐断。
+ * JSON over http(s)。
+ *
+ * timeoutMs 传 0 表示不限时；提交和轮询剪辑任务都要传一个几十秒的值。
+ * 以前这里写死不限时，是因为 /v1/seo 当年是同步接口，一跑几十分钟。现在它改成了
+ * 提交 + 轮询，每个请求都该很快回来——真的卡住就是链路断了，早点报比吊着强。
  */
-function requestJson(url, payload, { token = '', method = 'POST' } = {}) {
+function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url)
     const body = payload === undefined ? null : Buffer.from(JSON.stringify(payload), 'utf8')
@@ -208,7 +242,7 @@ function requestJson(url, payload, { token = '', method = 'POST' } = {}) {
     if (token) headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`
 
     const transport = target.protocol === 'https:' ? https : http
-    const request = transport.request(target, { method, headers, timeout: 0 }, (response) => {
+    const request = transport.request(target, { method, headers, timeout: timeoutMs }, (response) => {
       const chunks = []
       response.on('data', (chunk) => chunks.push(chunk))
       response.on('end', () => {
@@ -223,7 +257,10 @@ function requestJson(url, payload, { token = '', method = 'POST' } = {}) {
         if (status < 200 || status >= 300) {
           // falcon 那边顶层 message 永远是 "task failed"，真正的原因在 data.error_message 里。
           const detail = parsed?.data?.error_message || parsed?.message || text.slice(0, 300) || '无响应体'
-          reject(new ApiError(`${target.host} 返回 HTTP ${status}：${detail}`, 502))
+          const error = new ApiError(`${target.host} 返回 HTTP ${status}：${detail}`, 502)
+          // 留着上游状态码：轮询那边要靠它把"配置错了"和"链路抖了"分开。
+          error.upstreamStatus = status
+          reject(error)
           return
         }
         if (parsed === null) {
@@ -233,11 +270,21 @@ function requestJson(url, payload, { token = '', method = 'POST' } = {}) {
         resolve(parsed)
       })
     })
-    request.setTimeout(0)
+    request.setTimeout(timeoutMs)
+    if (timeoutMs > 0) {
+      // 'timeout' 不会自己中断请求，得手动销毁，否则连接会一直挂着。
+      request.on('timeout', () => {
+        request.destroy(new Error(`等待响应超过 ${Math.round(timeoutMs / 1000)}s`))
+      })
+    }
     request.on('error', (err) => reject(new ApiError(`连接 ${target.host} 失败：${err.message}`, 502)))
     if (body) request.write(body)
     request.end()
   })
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function downloadToFile(url, destination) {
@@ -482,8 +529,12 @@ async function uploadToOss(file) {
   if (OSS_PREFIX) args.push('--prefix', OSS_PREFIX)
 
   try {
+    // OSS_UTILS_REPO 只有在退回 Nacos 取凭证时才用得上。海外机器上那个仓库根本不存在，
+    // 而 spawn 碰到不存在的 cwd 会直接报错——所以目录在才传，不在就让它用当前目录跑，
+    // 凭证从环境变量读（见 oss_upload.py 开头那段说明）。
+    const cwd = fs.existsSync(OSS_UTILS_REPO) ? OSS_UTILS_REPO : undefined
     await run(OSS_PYTHON, args, {
-      cwd: OSS_UTILS_REPO,
+      ...(cwd ? { cwd } : {}),
       env: { ...process.env, OSS_UTILS_REPO },
     })
     const url = (await fsp.readFile(out, 'utf8')).trim()
@@ -504,18 +555,91 @@ function unwrapUrl(value) {
   return markdown ? markdown[1].trim() : text
 }
 
-async function runHighlightCut(videoUrl) {
-  // SEO 服务只接收 video_url，ASR 在服务端完成，避免前端再识别一次。
-  const response = await requestJson(`${SEO_URL}${SEO_PATH}`, { video_url: videoUrl })
-  const data = response?.data ?? {}
-  if (data.status === 'failed') {
-    throw new ApiError(`剪辑失败：${data.error_message || data.error_code || '未知原因'}`, 502)
+/**
+ * 提交高光剪辑任务，然后轮询到出结果。
+ *
+ * 剪辑服务只接收 video_url，ASR 在服务端完成，前端不用再识别一次。
+ *
+ * 这里以前是一个同步长请求：POST 出去，几分钟到几十分钟后才回来。两个服务同机
+ * 跑没问题，一旦分处两地（前端在海外、GPU 留在国内），这种长时间不出流量的连接
+ * 会被沿途的 NAT 和中间设备静默掐断，表现成"偶发失败、重试有时又好了"。
+ * 改成提交 + 轮询之后，跨境链路上每个请求都只有几秒，断一次也只是丢一轮轮询。
+ *
+ * onProgress 收到的是服务端的任务状态（task_id / progress / current_stage）。
+ */
+/** 401/403 是令牌配错了，不是链路抖动——再问一百遍也是同一个结果。 */
+function isAuthFailure(error) {
+  return error?.upstreamStatus === 401 || error?.upstreamStatus === 403
+}
+
+/** 把上游的 401 换成一句能直接照着改配置的话。 */
+function describeAuthFailure(error) {
+  const hint = SEO_TOKEN
+    ? '本地 SEO_TOKEN 和剪辑服务那边配的不一致'
+    : '本地没配 SEO_TOKEN，但剪辑服务已经开了鉴权'
+  return new ApiError(`剪辑服务拒绝了请求（${hint}）：${error.message}`, 502)
+}
+
+async function runHighlightCut(videoUrl, onProgress) {
+  let submitted
+  try {
+    submitted = await requestJson(
+      `${SEO_URL}${SEO_PATH}`,
+      { video_url: videoUrl },
+      { token: SEO_TOKEN, timeoutMs: SEO_REQUEST_TIMEOUT_MS },
+    )
+  } catch (error) {
+    throw isAuthFailure(error) ? describeAuthFailure(error) : error
   }
-  const highlights = Array.isArray(data.highlights) ? data.highlights : []
-  const segments = Array.isArray(data.asr?.segments) ? data.asr.segments : []
-  return {
-    highlights: highlights.map((item) => ({ ...item, video_url: unwrapUrl(item.video_url) })),
-    segments,
+  const taskId = submitted?.data?.task_id
+  if (!taskId) {
+    throw new ApiError(`提交剪辑任务失败，响应里没有 task_id：${JSON.stringify(submitted).slice(0, 200)}`, 502)
+  }
+  onProgress?.({ task_id: taskId, status: 'queued', progress: 0 })
+
+  const statusUrl = `${SEO_URL}${SEO_PATH}/${encodeURIComponent(taskId)}`
+  const deadline = Date.now() + SEO_TASK_TIMEOUT_MS
+  let failures = 0
+
+  while (true) {
+    await sleep(SEO_POLL_INTERVAL_MS)
+    if (Date.now() > deadline) {
+      throw new ApiError(`剪辑任务 ${taskId} 超过 ${Math.round(SEO_TASK_TIMEOUT_MS / 60000)} 分钟仍未完成`, 504)
+    }
+
+    let payload
+    try {
+      payload = await requestJson(statusUrl, undefined, {
+        method: 'GET',
+        token: SEO_TOKEN,
+        timeoutMs: SEO_REQUEST_TIMEOUT_MS,
+      })
+      failures = 0
+    } catch (error) {
+      // 令牌不对就别耗着了，重试十次也是同一个 401，而且会把真正的原因埋掉。
+      if (isAuthFailure(error)) throw describeAuthFailure(error)
+      // 单次查询失败不代表任务没了——任务还在国内那台机器上跑着，这边接着问就行。
+      failures += 1
+      if (failures >= SEO_POLL_MAX_ERRORS) {
+        throw new ApiError(`查询剪辑任务 ${taskId} 连续 ${failures} 次失败：${error.message}`, 502)
+      }
+      continue
+    }
+
+    const data = payload?.data ?? {}
+    if (data.status === 'failed') {
+      throw new ApiError(`剪辑失败：${data.error_message || data.error_code || '未知原因'}`, 502)
+    }
+    if (data.status === 'completed') {
+      const highlights = Array.isArray(data.highlights) ? data.highlights : []
+      const segments = Array.isArray(data.asr?.segments) ? data.asr.segments : []
+      return {
+        highlights: highlights.map((item) => ({ ...item, video_url: unwrapUrl(item.video_url) })),
+        segments,
+      }
+    }
+    // queued / processing，以及任何还没见过的中间状态，都继续等。
+    onProgress?.(data)
   }
 }
 
@@ -655,7 +779,7 @@ function pruneJobs() {
 
 function setStage(job, stage, ratio = 0) {
   const { label, from, to } = STAGES[stage]
-  // creepProgress 每 2 秒就会调一次，只有真换了步骤才值得打一行。
+  // clipProgress 每 2 秒就会调一次，只有真换了步骤才值得打一行。
   if (job.stage !== stage) {
     const elapsed = Math.round((Date.now() - job.startedAt) / 1000)
     log(`${shortId(job.id)} → ${stage}（${label}，已用 ${elapsed}s）`)
@@ -667,20 +791,46 @@ function setStage(job, stage, ratio = 0) {
 }
 
 /**
- * clip 这一步是个同步长请求，拿不到真实进度，就按经验时长（源视频时长的
- * 一半，夹在 2–20 分钟之间）往前爬，爬到 95% 就停住等真结果。
+ * clip 这一步的进度。
+ *
+ * 服务端现在会报真实进度，但它要等任务真的被 worker 领走才有第一个数，在那之前
+ * 还是按经验时长（源视频时长的一半，夹在 2–20 分钟之间）往前爬。真实进度一到就
+ * 停掉爬行，之后只认服务端的数。
+ *
+ * 两者都经过 advance()，只进不退：真实进度刚接上时可能比爬出来的低，那就先停在
+ * 原地等它追上来，免得进度条当着用户的面倒退。
  */
-function creepProgress(job, seconds) {
+function clipProgress(job, seconds) {
   const span = Math.min(20 * 60, Math.max(2 * 60, (seconds || 600) / 2)) * 1000
   const startedAt = Date.now()
-  return setInterval(() => {
+  let ratio = 0
+
+  const advance = (next) => {
+    const bounded = Math.min(1, Math.max(0, next))
+    if (bounded <= ratio) return
+    ratio = bounded
+    setStage(job, 'clip', ratio)
+  }
+
+  const timer = setInterval(() => {
     if (job.stage !== 'clip') return
-    setStage(job, 'clip', Math.min(0.95, (Date.now() - startedAt) / span))
+    advance(Math.min(0.95, (Date.now() - startedAt) / span))
   }, 2000)
+
+  return {
+    report(next) {
+      // 有真数就不用再猜了。
+      clearInterval(timer)
+      advance(next)
+    },
+    stop() {
+      clearInterval(timer)
+    },
+  }
 }
 
 async function runJob(job) {
-  let creep = null
+  let clip = null
   let source = null
   const user = job.input.email ? await findUserByEmail(job.input.email) : null
   try {
@@ -702,12 +852,24 @@ async function runJob(job) {
 
     setStage(job, 'asr', 0.3)
     setStage(job, 'clip', 0)
-    creep = creepProgress(job, job.input.duration)
-    const result = await runHighlightCut(videoUrl)
+    clip = clipProgress(job, job.input.duration)
+    let lastStage = ''
+    const result = await runHighlightCut(videoUrl, (status) => {
+      if (status.task_id && status.task_id !== job.taskId) {
+        job.taskId = status.task_id
+        // 跨境排查全靠这个 id 把两边的日志对上。
+        log(`${shortId(job.id)}   剪辑任务 ${status.task_id}`)
+      }
+      if (typeof status.progress === 'number') clip.report(status.progress / 100)
+      if (status.current_stage && status.current_stage !== lastStage) {
+        lastStage = status.current_stage
+        log(`${shortId(job.id)}   ${status.current_stage}（${status.progress ?? 0}%）`)
+      }
+    })
     let highlights = result.highlights
     const segments = result.segments
-    clearInterval(creep)
-    creep = null
+    clip.stop()
+    clip = null
 
     if (job.input.addSubtitles) {
       setStage(job, 'subtitles', 0.2)
@@ -725,7 +887,7 @@ async function runJob(job) {
     await recordConsumption(job, user, 'done', creditsForSeconds(job.input.duration), highlights.length, '')
     await recordAssets(job, user, highlights)
   } catch (error) {
-    if (creep) clearInterval(creep)
+    if (clip) clip.stop()
     // 页面上只给一句人话，排查要用的那串细节留给日志和消费记录。
     const detail = error instanceof ApiError ? error.message : `${error.message}`
     job.status = 'error'
@@ -785,6 +947,8 @@ function createJob(input) {
   pruneJobs()
   const job = {
     id: crypto.randomUUID(),
+    // 下游剪辑服务的任务 id，提交成功后回填，用来把两边的日志对起来。
+    taskId: '',
     status: 'running',
     stage: 'asr',
     label: STAGES.asr.label,

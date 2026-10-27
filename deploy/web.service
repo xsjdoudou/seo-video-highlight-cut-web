@@ -1,0 +1,34 @@
+[Unit]
+# vite preview：把 npm run build 产出的 dist 发出去。
+# 它不碰 SEO_TOKEN——令牌只在 clip-api 那个进程里用。
+# 这里仍然挂 EnvironmentFile 是为了 PORT 之类的配置统一一处改。
+#
+#   sudo cp deploy/web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now web
+#
+# 正式站点建议前面再放一层 nginx/caddy 负责 TLS 和静态文件，
+# vite preview 只适合先跑通链路。
+
+Description=seo-video-highlight web (vite preview)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seoweb
+Group=seoweb
+WorkingDirectory=/srv/seo-video-highlight-cut-web
+EnvironmentFile=/etc/seo-video-highlight/web.env
+ExecStart=/usr/bin/npx vite preview
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/seo-video-highlight-cut-web
+
+[Install]
+WantedBy=multi-user.target

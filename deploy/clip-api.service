@@ -1,0 +1,50 @@
+[Unit]
+# clip-api：前端和国内剪辑服务之间的那一层。海外机器上用 systemd 跑它，
+# 令牌从 EnvironmentFile 读，不进命令行（ps 看得见命令行，看不见这个）。
+#
+#   sudo cp deploy/clip-api.service /etc/systemd/system/
+#   sudo mkdir -p /etc/seo-video-highlight
+#   sudo cp .env.example /etc/seo-video-highlight/web.env
+#   sudo vi   /etc/seo-video-highlight/web.env     # 填 SEO_TOKEN / OSS_* / SEO_URL
+#   sudo chown root:root /etc/seo-video-highlight/web.env
+#   sudo chmod 600       /etc/seo-video-highlight/web.env
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now clip-api
+#   sudo systemctl status clip-api
+#
+# 注意 systemd 的 EnvironmentFile 语法比 shell 严：
+#   * 不要写 `export KEY=value`，只写 `KEY=value`
+#   * 不要在值后面跟 ` # 注释`，systemd 会把它当成值的一部分
+#   * 整行的 `# 注释` 没问题
+# 把 .env.example 抄过去时记得按这两条清一下。
+#
+# 这里直接 ExecStart=node，不走 scripts/with-env.mjs——EnvironmentFile 已经
+# 把变量塞进进程环境了，再读一遍 .env 只会多一个说不清以谁为准的来源。
+
+Description=seo-video-highlight clip-api
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seoweb
+Group=seoweb
+WorkingDirectory=/srv/seo-video-highlight-cut-web
+EnvironmentFile=/etc/seo-video-highlight/web.env
+ExecStart=/usr/bin/node scripts/clip-api.mjs
+Restart=always
+RestartSec=5
+
+# 跨境链路抽风时任务会卡住，日志留着排查用
+StandardOutput=journal
+StandardError=journal
+
+# 它只需要写 .uploads 和 data 两个目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/seo-video-highlight-cut-web
+
+[Install]
+WantedBy=multi-user.target

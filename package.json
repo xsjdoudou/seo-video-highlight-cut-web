@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/with-env.mjs vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "clip-api": "node scripts/clip-api.mjs",
-    "auth-proxy": "node scripts/auth-proxy.mjs",
-    "prepare:media": "python3 scripts/prepare_media.py"
+    "preview": "node scripts/with-env.mjs vite preview",
+    "clip-api": "node scripts/with-env.mjs node scripts/clip-api.mjs",
+    "auth-proxy": "node scripts/with-env.mjs node scripts/auth-proxy.mjs",
+    "prepare:media": "python3 scripts/prepare_media.py",
+    "check:seo": "node scripts/with-env.mjs node scripts/check-seo.mjs",
+    "check:oss": "node scripts/with-env.mjs python3 scripts/oss_upload.py --check"
   },
   "dependencies": {
     "react": "^19.1.0",
