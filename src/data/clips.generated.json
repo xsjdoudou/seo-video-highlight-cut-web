@@ -1,34 +1,6 @@
 {
   "sources": [
     {
-      "key": "yt_test_1",
-      "lang": "en",
-      "duration": 776.34,
-      "preview": "/media/yt_test_1/source-preview.mp4",
-      "poster": "/media/yt_test_1/source-poster.jpg",
-      "clips": [
-        {
-          "id": "h01",
-          "score": 70,
-          "scores": {
-            "hook": 75,
-            "value": 40,
-            "emotion": 80,
-            "standalone": 90,
-            "quotability": 70,
-            "clarity": 85
-          },
-          "type": "Highlight",
-          "sourceStart": 0.031,
-          "sourceEnd": 39.485,
-          "duration": 39.49,
-          "video": "/media/yt_test_1/clips/h01.mp4",
-          "preview": "/media/yt_test_1/clips/h01-preview.mp4",
-          "poster": "/media/yt_test_1/clips/h01.jpg"
-        }
-      ]
-    },
-    {
       "key": "yt_test_2",
       "lang": "en",
       "duration": 2829.63,
@@ -152,49 +124,863 @@
       ]
     },
     {
-      "key": "yt_test_4",
-      "lang": "en",
-      "duration": 913.12,
-      "preview": "/media/yt_test_4/source-preview.mp4",
-      "poster": "/media/yt_test_4/source-poster.jpg",
+      "key": "bili_test_4",
+      "lang": "zh",
+      "duration": 1799.88,
+      "preview": "/media/bili_test_4/source-preview.mp4",
+      "poster": "/media/bili_test_4/source-poster.jpg",
       "clips": [
         {
-          "id": "h03",
-          "score": 71,
+          "id": "h01",
+          "score": 88,
           "scores": {
-            "hook": 62,
-            "value": 82,
-            "emotion": 45,
-            "standalone": 78,
-            "quotability": 73,
-            "clarity": 88
+            "hook": 85,
+            "value": 90,
+            "emotion": 75,
+            "standalone": 95,
+            "quotability": 95,
+            "clarity": 90
           },
-          "type": "Highlight",
-          "sourceStart": 521.772,
-          "sourceEnd": 574.102,
-          "duration": 52.36,
-          "video": "/media/yt_test_4/clips/h03.mp4",
-          "preview": "/media/yt_test_4/clips/h03-preview.mp4",
-          "poster": "/media/yt_test_4/clips/h03.jpg"
+          "type": "Strong Take",
+          "sourceStart": 1006.743,
+          "sourceEnd": 1058.819,
+          "duration": 52.08,
+          "video": "/media/bili_test_4/clips/h01.mp4",
+          "preview": "/media/bili_test_4/clips/h01-preview.mp4",
+          "poster": "/media/bili_test_4/clips/h01.jpg"
+        },
+        {
+          "id": "h02",
+          "score": 87,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 75,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 92
+          },
+          "type": "Strong Take",
+          "sourceStart": 547.81,
+          "sourceEnd": 624.389,
+          "duration": 76.69,
+          "video": "/media/bili_test_4/clips/h02.mp4",
+          "preview": "/media/bili_test_4/clips/h02-preview.mp4",
+          "poster": "/media/bili_test_4/clips/h02.jpg"
+        },
+        {
+          "id": "h03",
+          "score": 86,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 95,
+            "quotability": 92,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 624.743,
+          "sourceEnd": 664.501,
+          "duration": 39.77,
+          "video": "/media/bili_test_4/clips/h03.mp4",
+          "preview": "/media/bili_test_4/clips/h03-preview.mp4",
+          "poster": "/media/bili_test_4/clips/h03.jpg"
         },
         {
           "id": "h04",
-          "score": 61,
+          "score": 85,
           "scores": {
-            "hook": 68,
-            "value": 72,
-            "emotion": 63,
-            "standalone": 70,
-            "quotability": 74,
-            "clarity": 86
+            "hook": 85,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 520.439,
+          "sourceEnd": 547.287,
+          "duration": 26.9,
+          "video": "/media/bili_test_4/clips/h04.mp4",
+          "preview": "/media/bili_test_4/clips/h04-preview.mp4",
+          "poster": "/media/bili_test_4/clips/h04.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 85,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 92
+          },
+          "type": "Strong Take",
+          "sourceStart": 953.097,
+          "sourceEnd": 1006.321,
+          "duration": 53.29,
+          "video": "/media/bili_test_4/clips/h05.mp4",
+          "preview": "/media/bili_test_4/clips/h05-preview.mp4",
+          "poster": "/media/bili_test_4/clips/h05.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 85,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 92
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 1122.573,
+          "sourceEnd": 1172.827,
+          "duration": 50.37,
+          "video": "/media/bili_test_4/clips/h06.mp4",
+          "preview": "/media/bili_test_4/clips/h06-preview.mp4",
+          "poster": "/media/bili_test_4/clips/h06.jpg"
+        }
+      ]
+    },
+    {
+      "key": "bili_test_3",
+      "lang": "zh",
+      "duration": 1799.88,
+      "preview": "/media/bili_test_3/source-preview.mp4",
+      "poster": "/media/bili_test_3/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 85,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 92
+          },
+          "type": "Strong Take",
+          "sourceStart": 439.743,
+          "sourceEnd": 504.442,
+          "duration": 64.83,
+          "video": "/media/bili_test_3/clips/h01.mp4",
+          "preview": "/media/bili_test_3/clips/h01-preview.mp4",
+          "poster": "/media/bili_test_3/clips/h01.jpg"
+        },
+        {
+          "id": "h02",
+          "score": 81,
+          "scores": {
+            "hook": 75,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 85,
+            "quotability": 85,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 598.064,
+          "sourceEnd": 731.073,
+          "duration": 133.05,
+          "video": "/media/bili_test_3/clips/h02.mp4",
+          "preview": "/media/bili_test_3/clips/h02-preview.mp4",
+          "poster": "/media/bili_test_3/clips/h02.jpg"
+        },
+        {
+          "id": "h03",
+          "score": 81,
+          "scores": {
+            "hook": 75,
+            "value": 90,
+            "emotion": 60,
+            "standalone": 85,
+            "quotability": 85,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 1426.947,
+          "sourceEnd": 1602.38,
+          "duration": 175.64,
+          "video": "/media/bili_test_3/clips/h03.mp4",
+          "preview": "/media/bili_test_3/clips/h03-preview.mp4",
+          "poster": "/media/bili_test_3/clips/h03.jpg"
+        },
+        {
+          "id": "h04",
+          "score": 79,
+          "scores": {
+            "hook": 75,
+            "value": 85,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 85
+          },
+          "type": "Strong Take",
+          "sourceStart": 392.898,
+          "sourceEnd": 438.832,
+          "duration": 46.0,
+          "video": "/media/bili_test_3/clips/h04.mp4",
+          "preview": "/media/bili_test_3/clips/h04-preview.mp4",
+          "poster": "/media/bili_test_3/clips/h04.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 79,
+          "scores": {
+            "hook": 75,
+            "value": 85,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 70,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 173.337,
+          "sourceEnd": 212.875,
+          "duration": 39.65,
+          "video": "/media/bili_test_3/clips/h05.mp4",
+          "preview": "/media/bili_test_3/clips/h05-preview.mp4",
+          "poster": "/media/bili_test_3/clips/h05.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 77,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 70,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 121.683,
+          "sourceEnd": 173.0,
+          "duration": 51.41,
+          "video": "/media/bili_test_3/clips/h06.mp4",
+          "preview": "/media/bili_test_3/clips/h06-preview.mp4",
+          "poster": "/media/bili_test_3/clips/h06.jpg"
+        }
+      ]
+    },
+    {
+      "key": "bili_test_2",
+      "lang": "zh",
+      "duration": 1800.42,
+      "preview": "/media/bili_test_2/source-preview.mp4",
+      "poster": "/media/bili_test_2/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 87,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 70,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 266.69,
+          "sourceEnd": 427.947,
+          "duration": 161.52,
+          "video": "/media/bili_test_2/clips/h01.mp4",
+          "preview": "/media/bili_test_2/clips/h01-preview.mp4",
+          "poster": "/media/bili_test_2/clips/h01.jpg"
+        },
+        {
+          "id": "h02",
+          "score": 86,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 95,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 428.099,
+          "sourceEnd": 497.793,
+          "duration": 69.83,
+          "video": "/media/bili_test_2/clips/h02.mp4",
+          "preview": "/media/bili_test_2/clips/h02-preview.mp4",
+          "poster": "/media/bili_test_2/clips/h02.jpg"
+        },
+        {
+          "id": "h03",
+          "score": 86,
+          "scores": {
+            "hook": 85,
+            "value": 95,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 90,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 1037.152,
+          "sourceEnd": 1343.365,
+          "duration": 306.46,
+          "video": "/media/bili_test_2/clips/h03.mp4",
+          "preview": "/media/bili_test_2/clips/h03-preview.mp4",
+          "poster": "/media/bili_test_2/clips/h03.jpg"
+        },
+        {
+          "id": "h04",
+          "score": 81,
+          "scores": {
+            "hook": 75,
+            "value": 92,
+            "emotion": 60,
+            "standalone": 85,
+            "quotability": 80,
+            "clarity": 90
+          },
+          "type": "Framework",
+          "sourceStart": 712.072,
+          "sourceEnd": 895.368,
+          "duration": 183.43,
+          "video": "/media/bili_test_2/clips/h04.mp4",
+          "preview": "/media/bili_test_2/clips/h04-preview.mp4",
+          "poster": "/media/bili_test_2/clips/h04.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 80,
+          "scores": {
+            "hook": 85,
+            "value": 75,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 52.225,
+          "sourceEnd": 74.467,
+          "duration": 22.31,
+          "video": "/media/bili_test_2/clips/h06.mp4",
+          "preview": "/media/bili_test_2/clips/h06-preview.mp4",
+          "poster": "/media/bili_test_2/clips/h06.jpg"
+        },
+        {
+          "id": "h07",
+          "score": 78,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 75,
+            "standalone": 95,
+            "quotability": 92,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 126.88,
+          "sourceEnd": 189.301,
+          "duration": 62.24,
+          "video": "/media/bili_test_2/clips/h07.mp4",
+          "preview": "/media/bili_test_2/clips/h07-preview.mp4",
+          "poster": "/media/bili_test_2/clips/h07.jpg"
+        }
+      ]
+    },
+    {
+      "key": "fenglun",
+      "lang": "zh",
+      "duration": 1304.1,
+      "preview": "/media/fenglun/source-preview.mp4",
+      "poster": "/media/fenglun/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 89,
+          "scores": {
+            "hook": 90,
+            "value": 85,
+            "emotion": 80,
+            "standalone": 95,
+            "quotability": 95,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 1183.627,
+          "sourceEnd": 1214.491,
+          "duration": 30.91,
+          "video": "/media/fenglun/clips/h01.mp4",
+          "preview": "/media/fenglun/clips/h01-preview.mp4",
+          "poster": "/media/fenglun/clips/h01.jpg"
+        },
+        {
+          "id": "h02",
+          "score": 89,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 80,
+            "standalone": 95,
+            "quotability": 92,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 151.484,
+          "sourceEnd": 174.164,
+          "duration": 22.7,
+          "video": "/media/fenglun/clips/h02.mp4",
+          "preview": "/media/fenglun/clips/h02-preview.mp4",
+          "poster": "/media/fenglun/clips/h02.jpg"
+        },
+        {
+          "id": "h03",
+          "score": 88,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 75,
+            "standalone": 95,
+            "quotability": 92,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 350.035,
+          "sourceEnd": 425.973,
+          "duration": 75.97,
+          "video": "/media/fenglun/clips/h03.mp4",
+          "preview": "/media/fenglun/clips/h03-preview.mp4",
+          "poster": "/media/fenglun/clips/h03.jpg"
+        },
+        {
+          "id": "h04",
+          "score": 88,
+          "scores": {
+            "hook": 95,
+            "value": 85,
+            "emotion": 75,
+            "standalone": 90,
+            "quotability": 90,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 106.023,
+          "sourceEnd": 126.188,
+          "duration": 20.19,
+          "video": "/media/fenglun/clips/h04.mp4",
+          "preview": "/media/fenglun/clips/h04-preview.mp4",
+          "poster": "/media/fenglun/clips/h04.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 88,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 75,
+            "standalone": 95,
+            "quotability": 92,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 1214.963,
+          "sourceEnd": 1267.107,
+          "duration": 52.21,
+          "video": "/media/fenglun/clips/h05.mp4",
+          "preview": "/media/fenglun/clips/h05-preview.mp4",
+          "poster": "/media/fenglun/clips/h05.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 88,
+          "scores": {
+            "hook": 85,
+            "value": 90,
+            "emotion": 75,
+            "standalone": 95,
+            "quotability": 88,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 236.804,
+          "sourceEnd": 303.882,
+          "duration": 67.1,
+          "video": "/media/fenglun/clips/h06.mp4",
+          "preview": "/media/fenglun/clips/h06-preview.mp4",
+          "poster": "/media/fenglun/clips/h06.jpg"
+        }
+      ]
+    },
+    {
+      "key": "shangban",
+      "lang": "zh",
+      "duration": 1135.04,
+      "preview": "/media/shangban/source-preview.mp4",
+      "poster": "/media/shangban/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 90,
+          "scores": {
+            "hook": 90,
+            "value": 95,
+            "emotion": 75,
+            "standalone": 90,
+            "quotability": 95,
+            "clarity": 90
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 295.394,
+          "sourceEnd": 333.633,
+          "duration": 38.28,
+          "video": "/media/shangban/clips/h01.mp4",
+          "preview": "/media/shangban/clips/h01-preview.mp4",
+          "poster": "/media/shangban/clips/h01.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 88,
+          "scores": {
+            "hook": 95,
+            "value": 85,
+            "emotion": 75,
+            "standalone": 90,
+            "quotability": 95,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 0.031,
+          "sourceEnd": 10.679,
+          "duration": 10.7,
+          "video": "/media/shangban/clips/h05.mp4",
+          "preview": "/media/shangban/clips/h05-preview.mp4",
+          "poster": "/media/shangban/clips/h05.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 87,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 75,
+            "standalone": 90,
+            "quotability": 88,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 227.152,
+          "sourceEnd": 295.31,
+          "duration": 68.25,
+          "video": "/media/shangban/clips/h06.mp4",
+          "preview": "/media/shangban/clips/h06-preview.mp4",
+          "poster": "/media/shangban/clips/h06.jpg"
+        },
+        {
+          "id": "h07",
+          "score": 83,
+          "scores": {
+            "hook": 85,
+            "value": 75,
+            "emotion": 90,
+            "standalone": 80,
+            "quotability": 85,
+            "clarity": 90
+          },
+          "type": "Emotional Peak",
+          "sourceStart": 321.365,
+          "sourceEnd": 377.187,
+          "duration": 55.51,
+          "video": "/media/shangban/clips/h07.mp4",
+          "preview": "/media/shangban/clips/h07-preview.mp4",
+          "poster": "/media/shangban/clips/h07.jpg"
+        },
+        {
+          "id": "h09",
+          "score": 81,
+          "scores": {
+            "hook": 75,
+            "value": 85,
+            "emotion": 70,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 90
+          },
+          "type": "Framework",
+          "sourceStart": 69.758,
+          "sourceEnd": 153.762,
+          "duration": 84.06,
+          "video": "/media/shangban/clips/h09.mp4",
+          "preview": "/media/shangban/clips/h09-preview.mp4",
+          "poster": "/media/shangban/clips/h09.jpg"
+        },
+        {
+          "id": "h10",
+          "score": 80,
+          "scores": {
+            "hook": 85,
+            "value": 92,
+            "emotion": 88,
+            "standalone": 90,
+            "quotability": 95,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 941.386,
+          "sourceEnd": 1072.302,
+          "duration": 130.96,
+          "video": "/media/shangban/clips/h10.mp4",
+          "preview": "/media/shangban/clips/h10-preview.mp4",
+          "poster": "/media/shangban/clips/h10.jpg"
+        }
+      ]
+    },
+    {
+      "key": "jogg_1",
+      "lang": "zh",
+      "duration": 134.16,
+      "preview": "/media/jogg_1/source-preview.mp4",
+      "poster": "/media/jogg_1/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 80,
+          "scores": {
+            "hook": 75,
+            "value": 80,
+            "emotion": 70,
+            "standalone": 85,
+            "quotability": 85,
+            "clarity": 90
+          },
+          "type": "Strong Take",
+          "sourceStart": 87.173,
+          "sourceEnd": 102.952,
+          "duration": 15.84,
+          "video": "/media/jogg_1/clips/h01.mp4",
+          "preview": "/media/jogg_1/clips/h01-preview.mp4",
+          "poster": "/media/jogg_1/clips/h01.jpg"
+        },
+        {
+          "id": "h02",
+          "score": 80,
+          "scores": {
+            "hook": 85,
+            "value": 75,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 95
+          },
+          "type": "Surprising Insight",
+          "sourceStart": 53.069,
+          "sourceEnd": 68.611,
+          "duration": 15.56,
+          "video": "/media/jogg_1/clips/h02.mp4",
+          "preview": "/media/jogg_1/clips/h02-preview.mp4",
+          "poster": "/media/jogg_1/clips/h02.jpg"
+        },
+        {
+          "id": "h03",
+          "score": 78,
+          "scores": {
+            "hook": 85,
+            "value": 70,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 80,
+            "clarity": 95
+          },
+          "type": "Funny Moment",
+          "sourceStart": 21.968,
+          "sourceEnd": 36.515,
+          "duration": 14.54,
+          "video": "/media/jogg_1/clips/h03.mp4",
+          "preview": "/media/jogg_1/clips/h03-preview.mp4",
+          "poster": "/media/jogg_1/clips/h03.jpg"
+        },
+        {
+          "id": "h04",
+          "score": 76,
+          "scores": {
+            "hook": 65,
+            "value": 75,
+            "emotion": 70,
+            "standalone": 85,
+            "quotability": 80,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 103.627,
+          "sourceEnd": 119.067,
+          "duration": 15.48,
+          "video": "/media/jogg_1/clips/h04.mp4",
+          "preview": "/media/jogg_1/clips/h04-preview.mp4",
+          "poster": "/media/jogg_1/clips/h04.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 72,
+          "scores": {
+            "hook": 75,
+            "value": 85,
+            "emotion": 60,
+            "standalone": 90,
+            "quotability": 95,
+            "clarity": 95
+          },
+          "type": "Strong Take",
+          "sourceStart": 37.088,
+          "sourceEnd": 52.462,
+          "duration": 15.4,
+          "video": "/media/jogg_1/clips/h05.mp4",
+          "preview": "/media/jogg_1/clips/h05-preview.mp4",
+          "poster": "/media/jogg_1/clips/h05.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 66,
+          "scores": {
+            "hook": 85,
+            "value": 40,
+            "emotion": 30,
+            "standalone": 90,
+            "quotability": 75,
+            "clarity": 95
+          },
+          "type": "Story Moment",
+          "sourceStart": 0.166,
+          "sourceEnd": 21.175,
+          "duration": 21.07,
+          "video": "/media/jogg_1/clips/h06.mp4",
+          "preview": "/media/jogg_1/clips/h06-preview.mp4",
+          "poster": "/media/jogg_1/clips/h06.jpg"
+        }
+      ]
+    },
+    {
+      "key": "tk_test_12",
+      "lang": "zh",
+      "duration": 654.17,
+      "preview": "/media/tk_test_12/source-preview.mp4",
+      "poster": "/media/tk_test_12/source-poster.jpg",
+      "clips": [
+        {
+          "id": "h01",
+          "score": 84,
+          "scores": {
+            "hook": 88,
+            "value": 78,
+            "emotion": 70,
+            "standalone": 92,
+            "quotability": 86,
+            "clarity": 93
           },
           "type": "Highlight",
-          "sourceStart": 179.294,
-          "sourceEnd": 237.074,
-          "duration": 55.38,
-          "video": "/media/yt_test_4/clips/h04.mp4",
-          "preview": "/media/yt_test_4/clips/h04-preview.mp4",
-          "poster": "/media/yt_test_4/clips/h04.jpg"
+          "sourceStart": 46.808,
+          "sourceEnd": 97.501,
+          "duration": 50.74,
+          "video": "/media/tk_test_12/clips/h01.mp4",
+          "preview": "/media/tk_test_12/clips/h01-preview.mp4",
+          "poster": "/media/tk_test_12/clips/h01.jpg"
+        },
+        {
+          "id": "h03",
+          "score": 80,
+          "scores": {
+            "hook": 72,
+            "value": 78,
+            "emotion": 86,
+            "standalone": 82,
+            "quotability": 84,
+            "clarity": 88
+          },
+          "type": "Highlight",
+          "sourceStart": 367.484,
+          "sourceEnd": 449.817,
+          "duration": 82.4,
+          "video": "/media/tk_test_12/clips/h03.mp4",
+          "preview": "/media/tk_test_12/clips/h03-preview.mp4",
+          "poster": "/media/tk_test_12/clips/h03.jpg"
+        },
+        {
+          "id": "h04",
+          "score": 76,
+          "scores": {
+            "hook": 68,
+            "value": 82,
+            "emotion": 60,
+            "standalone": 86,
+            "quotability": 76,
+            "clarity": 88
+          },
+          "type": "Highlight",
+          "sourceStart": 97.636,
+          "sourceEnd": 186.787,
+          "duration": 89.21,
+          "video": "/media/tk_test_12/clips/h04.mp4",
+          "preview": "/media/tk_test_12/clips/h04-preview.mp4",
+          "poster": "/media/tk_test_12/clips/h04.jpg"
+        },
+        {
+          "id": "h05",
+          "score": 75,
+          "scores": {
+            "hook": 88,
+            "value": 82,
+            "emotion": 78,
+            "standalone": 90,
+            "quotability": 86,
+            "clarity": 87
+          },
+          "type": "Highlight",
+          "sourceStart": 0.031,
+          "sourceEnd": 38.017,
+          "duration": 38.01,
+          "video": "/media/tk_test_12/clips/h05.mp4",
+          "preview": "/media/tk_test_12/clips/h05-preview.mp4",
+          "poster": "/media/tk_test_12/clips/h05.jpg"
+        },
+        {
+          "id": "h06",
+          "score": 66,
+          "scores": {
+            "hook": 52,
+            "value": 76,
+            "emotion": 45,
+            "standalone": 78,
+            "quotability": 68,
+            "clarity": 82
+          },
+          "type": "Highlight",
+          "sourceStart": 502.214,
+          "sourceEnd": 541.853,
+          "duration": 39.68,
+          "video": "/media/tk_test_12/clips/h06.mp4",
+          "preview": "/media/tk_test_12/clips/h06-preview.mp4",
+          "poster": "/media/tk_test_12/clips/h06.jpg"
+        },
+        {
+          "id": "h07",
+          "score": 63,
+          "scores": {
+            "hook": 58,
+            "value": 78,
+            "emotion": 62,
+            "standalone": 72,
+            "quotability": 84,
+            "clarity": 90
+          },
+          "type": "Highlight",
+          "sourceStart": 449.986,
+          "sourceEnd": 474.1,
+          "duration": 24.17,
+          "video": "/media/tk_test_12/clips/h07.mp4",
+          "preview": "/media/tk_test_12/clips/h07-preview.mp4",
+          "poster": "/media/tk_test_12/clips/h07.jpg"
         }
       ]
     }

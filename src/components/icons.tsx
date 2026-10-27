@@ -45,6 +45,99 @@ export function PlayIcon() {
   )
 }
 
+export function BoltIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M13.5 2 4 14h6l-.5 8L20 10h-6.5z" fill="#ffc83d" />
+    </svg>
+  )
+}
+
+export function InfoIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 10.8v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="7.6" r="1.1" fill="currentColor" />
+    </svg>
+  )
+}
+
+/* ---- 登录弹窗用的品牌图标 ---- */
+
+export function GoogleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#4285f4"
+        d="M45.1 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.2-3.8 6.6-9.5 6.6-16.3z"
+      />
+      <path
+        fill="#34a853"
+        d="M24 46c6 0 11-2 14.6-5.2l-7.1-5.5c-2 1.3-4.5 2.1-7.5 2.1-5.8 0-10.6-3.9-12.4-9.1H4.3v5.7C7.9 41.2 15.4 46 24 46z"
+      />
+      <path fill="#fbbc05" d="M11.6 28.3c-.5-1.3-.7-2.8-.7-4.3s.3-3 .7-4.3v-5.7H4.3A22 22 0 0 0 2 24c0 3.6.9 6.9 2.3 9.9l7.3-5.6z" />
+      <path
+        fill="#ea4335"
+        d="M24 10.6c3.3 0 6.2 1.1 8.5 3.3l6.3-6.3C35 4.1 30 2 24 2 15.4 2 7.9 6.8 4.3 13.9l7.3 5.7c1.8-5.2 6.6-9 12.4-9z"
+      />
+    </svg>
+  )
+}
+
+export function FacebookIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#1877f2" />
+      <path
+        fill="#fff"
+        d="M15.4 13.3 15.9 10h-3.2V7.9c0-.9.4-1.8 1.9-1.8h1.4V3.3S14.7 3 13.5 3c-2.5 0-4.1 1.5-4.1 4.3V10H6.6v3.3h2.8V23h3.3v-9.7z"
+      />
+    </svg>
+  )
+}
+
+export function MailIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2.5" y="5" width="19" height="14" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="m3.5 7.5 8.5 6 8.5-6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function AppleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8c-1.5 0-2.9.9-3.7 2.3-1.6 2.7-.4 6.8 1.1 9 .8 1.1 1.7 2.3 2.9 2.2 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.2 0 2-1.1 2.8-2.2.9-1.3 1.2-2.5 1.2-2.5s-2.4-.9-2.4-3.6zM14.2 5.3c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.8 1.4-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.5 2.8-1.3z"
+      />
+    </svg>
+  )
+}
+
+export function GitHubIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.9c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.7-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10 10 0 0 0 12 2z"
+      />
+    </svg>
+  )
+}
+
+export function BusinessIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="7" width="8" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="11" y="4" width="10" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M14 8h4M14 11.5h4M14 15h4M6 11h2M6 15h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export const PLATFORM_LABEL: Record<Platform, string> = {
   youtube: 'YouTube Shorts',
   instagram: 'Instagram Reels',

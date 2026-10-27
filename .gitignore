@@ -7,3 +7,16 @@ tsconfig.tsbuildinfo
 
 # ~170MB of transcoded demo media; regenerate with `npm run prepare:media`
 public/media
+
+# 上传的源视频和压好字幕的成片
+.uploads
+
+# 用户档案 / 充值 / 消费记录
+data
+
+# 本地运行脚本可能包含真实凭证
+bash.sh
+
+# Python bytecode
+__pycache__/
+*.py[cod]

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { formatDuration, pickSourceIndex, sources, type Clip } from '../data/clips'
+import type { JobInput } from '../lib/videoSource'
 import ClipCard from './ClipCard'
 import { HandCursor, LinkIcon } from './icons'
 
 type Phase = 'idle' | 'typing' | 'clicking' | 'processing' | 'done'
 
-const PROMPT = 'Drop a long video and get viral clips'
+const PROMPT = 'https://www.youtube.com/watch?v=your-podcast-episode'
 const TYPE_MS = 38
 const ROTATE_MS = 3000
 
@@ -14,9 +15,12 @@ const prefersReducedMotion = () =>
 
 export default function DemoShowcase({
   onOpenClip,
+  onStart,
   paused = false,
 }: {
   onOpenClip: (clip: Clip) => void
+  /** Called with the visitor's own link or file, which opens the confirm page. */
+  onStart: (input: JobInput) => void
   /** Held by the parent while a clip modal is open, so rotation waits. */
   paused?: boolean
 }) {
@@ -28,7 +32,11 @@ export default function DemoShowcase({
   const [autoRotate, setAutoRotate] = useState(() => !prefersReducedMotion())
   const [hovered, setHovered] = useState(false)
   const [hidden, setHidden] = useState(false)
+  const [notice, setNotice] = useState('')
+  /** True once the visitor types their own link, so the scripted typing stops. */
+  const [userEdited, setUserEdited] = useState(false)
   const panelRef = useRef<HTMLElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const source = sources[sourceIndex]
 
@@ -59,7 +67,7 @@ export default function DemoShowcase({
     const timers: number[] = []
     const after = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms))
 
-    if (phase === 'typing') {
+    if (phase === 'typing' && !userEdited) {
       setTyped('')
       PROMPT.split('').forEach((_, i) => after(250 + i * TYPE_MS, () => setTyped(PROMPT.slice(0, i + 1))))
       after(250 + PROMPT.length * TYPE_MS + 250, () => setPhase('clicking'))
@@ -69,7 +77,7 @@ export default function DemoShowcase({
       after(1300, () => setPhase('done'))
     }
     return () => timers.forEach(clearTimeout)
-  }, [phase, runId])
+  }, [phase, runId, userEdited])
 
   /**
    * Once the clips are on screen, cycle to the next podcast every 3s. The intro
@@ -124,6 +132,30 @@ export default function DemoShowcase({
     setPhase('done')
   }, [])
 
+  /** The visitor took over the input: drop the demo straight to its end state. */
+  const onInput = useCallback((value: string) => {
+    setUserEdited(true)
+    setTyped(value)
+    setNotice('')
+    setPhase('done')
+  }, [])
+
+  const onSubmit = useCallback(
+    (e: FormEvent) => {
+      e.preventDefault()
+      if (!typed.trim()) {
+        setNotice('Paste a video link first.')
+      } else if (userEdited) {
+        onStart({ kind: 'link', url: typed.trim() })
+      } else {
+        // Still the scripted prompt — the button replays the demo instead.
+        setNotice('')
+        replay()
+      }
+    },
+    [typed, userEdited, replay, onStart],
+  )
+
   const showClips = phase === 'done'
 
   return (
@@ -159,32 +191,49 @@ export default function DemoShowcase({
         {source.title}
       </p>
 
-      <div className="demo__prompt">
-        <div className="demo__prompt-text">
-          <LinkIcon />
-          <span className="demo__typed">
-            {typed || <span className="demo__placeholder">Paste a YouTube link…</span>}
-            {(phase === 'typing' || phase === 'idle') && <span className="demo__caret" />}
+      <div className="demo__cta">
+        <form className="demo__prompt" onSubmit={onSubmit}>
+          <div className="demo__prompt-text">
+            <LinkIcon />
+            <input
+              className="demo__input"
+              type="text"
+              inputMode="url"
+              value={typed}
+              placeholder="Drop a video link"
+              aria-label="Video link"
+              onChange={(e) => onInput(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            className={`demo__button ${phase === 'processing' ? 'is-loading' : ''}`}
+          >
+            {phase === 'processing' ? (
+              <>
+                <span className="spinner" aria-hidden="true" /> Clipping…
+              </>
+            ) : (
+              'Get free clips'
+            )}
+          </button>
+          <span className="demo__cursor" aria-hidden="true">
+            <HandCursor />
           </span>
-        </div>
-        <button
-          type="button"
-          className={`demo__button ${phase === 'processing' ? 'is-loading' : ''}`}
-          onClick={replay}
-          aria-label="Get clips (replay demo)"
-        >
-          {phase === 'processing' ? (
-            <>
-              <span className="spinner" aria-hidden="true" /> Clipping…
-            </>
-          ) : (
-            'Get clips'
-          )}
+        </form>
+        <span className="demo__or">or</span>
+        <button type="button" className="btn btn--outline btn--lg" onClick={() => fileInput.current?.click()}>
+          Upload files
         </button>
-        <span className="demo__cursor" aria-hidden="true">
-          <HandCursor />
-        </span>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="video/*"
+          hidden
+          onChange={(e) => e.target.files?.length && onStart({ kind: 'file', file: e.target.files[0] })}
+        />
       </div>
+      <p className="demo__notice" role="status">{notice}</p>
 
       <ul className="demo__clips" key={`clips-${source.key}`}>
         {source.clips.map((clip, i) => (

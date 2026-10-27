@@ -11,6 +11,12 @@ export type ScoreBreakdown = {
   clarity: number
 }
 
+export type ClipEvaluation = {
+  conclusion?: string
+  summary?: string
+  reasons: Partial<Record<keyof ScoreBreakdown, string>>
+}
+
 type GeneratedSource = (typeof generated.sources)[number]
 type GeneratedClip = GeneratedSource['clips'][number]
 
@@ -18,6 +24,7 @@ export type Clip = GeneratedClip & {
   title: string
   platform: Platform
   scores: ScoreBreakdown
+  evaluation?: ClipEvaluation
 }
 
 export type Source = Omit<GeneratedSource, 'clips'> & {

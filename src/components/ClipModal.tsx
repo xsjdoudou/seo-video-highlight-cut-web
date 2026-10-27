@@ -45,6 +45,18 @@ export default function ClipModal({ clip, onClose }: { clip: Clip; onClose: () =
             <span className="modal__score-value">{clip.score}</span>
             <span className="modal__score-label">Virality score</span>
           </div>
+          {clip.evaluation?.conclusion && (
+            <div className="modal__conclusion">
+              <span className="modal__section-label">AI conclusion</span>
+              <p>{clip.evaluation.conclusion}</p>
+            </div>
+          )}
+          {clip.evaluation?.summary && (
+            <div className="modal__summary">
+              <span className="modal__section-label">Clip summary</span>
+              <p>{clip.evaluation.summary}</p>
+            </div>
+          )}
           <ul className="score-bars">
             {DIMENSIONS.map(({ key, label }) => (
               <li key={key}>
@@ -53,6 +65,7 @@ export default function ClipModal({ clip, onClose }: { clip: Clip; onClose: () =
                   <span className="score-bars__fill" style={{ width: `${clip.scores[key]}%` }} />
                 </span>
                 <span className="score-bars__value">{clip.scores[key]}</span>
+                {clip.evaluation?.reasons[key] && <p className="score-bars__reason">{clip.evaluation.reasons[key]}</p>}
               </li>
             ))}
           </ul>
