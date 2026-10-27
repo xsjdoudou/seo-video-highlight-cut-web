@@ -78,7 +78,7 @@ SEO_PORT=10080 SEO_TOKEN=<和海外同一个值> python seo_server.py
 安全组对**出方向**是全放通的，所以反过来由国内发起连接就绕开了权限问题：
 
 ```
-国内机器  ssh -R 10080:127.0.0.1:10080 <用户>@<海外IP>
+国内机器  ssh -R 127.0.0.1:10080:127.0.0.1:10080 <用户>@<海外IP>
                       │
                       └─▶ 海外机器上出现一个 127.0.0.1:10080，连它就等于连国内的服务
 ```
@@ -87,15 +87,24 @@ SEO_PORT=10080 SEO_TOKEN=<和海外同一个值> python seo_server.py
 SSH 加密的了——直连方案里 `SEO_TOKEN` 是明文走公网的。
 
 装法见 [deploy/seo-tunnel.service](deploy/seo-tunnel.service)，文件头上写了完整步骤。
-三个容易踩的点先说在这里：
+四个容易踩的点先说在这里，前三个的报错都指向错误的方向：
 
-- **密钥要限权。** 海外机器的 `authorized_keys` 里给这把钥匙加上
-  `restrict,port-forwarding,permitlisten="127.0.0.1:10080"`。这样密钥泄漏了也只能挂
-  这一个端口，登不进 shell。
-- **先手动连一次**把海外机器的 host key 收进 `known_hosts`。不然 unit 会卡在
-  交互式确认上，日志里只有一句 `Host key verification failed`。
+- **密钥别留在 root 名下。** `sudo ssh-keygen` 生成出来是 `root:root`，而隧道是以普通
+  用户跑的，读不到就报 `Load key ...: Permission denied`，紧接着因为没钥匙可用而变成
+  `Permission denied (publickey)`——看着像公钥没加对，其实是本地文件权限。
+  生成完 `sudo chown <跑隧道的用户>:<同左> /etc/seo-video-highlight/tunnel_key*`。
+- **监听地址要写全。** 必须是 `-R 127.0.0.1:10080:127.0.0.1:10080`，不能简写成
+  `-R 10080:...`。简写时 ssh 发过去的 bind address 是空的，和 `authorized_keys` 里的
+  `permitlisten="127.0.0.1:10080"` 字面匹配不上，sshd 会拒绝转发，报错只有一句
+  `Permission denied (open failed)`。
+- **host key 是按用户存的。** 先用**跑隧道的那个用户**手动 ssh 一次收 host key。
+  用 sudo 试的话收进的是 root 的 `known_hosts`，unit 照样 `Host key verification failed`。
 - **`ExitOnForwardFailure=yes` 不能省。** 缺了它，端口没挂上时 ssh 会「连上了但没转发」
   地挂着，systemd 看着是 active，而所有请求都 connection refused。
+
+密钥要限权：海外机器的 `authorized_keys` 里给这把钥匙加上
+`restrict,port-forwarding,permitlisten="127.0.0.1:10080"`。这样密钥泄漏了也只能挂
+这一个端口，登不进 shell。
 
 挂好之后，海外机器的配置改成：
 
@@ -275,7 +284,10 @@ sudo systemctl enable --now clip-api web
 | 请求**超时** | 包被丢了，没到机器。直连的话是安全组没放通；走隧道的话是隧道断了，到国内 `systemctl status seo-tunnel` |
 | 请求**被拒绝**（connection refused） | 包到了但没人监听。国内的服务没起，或者起在别的端口（要 `SEO_PORT=10080`） |
 | 隧道 active 但请求全被拒绝 | unit 里漏了 `ExitOnForwardFailure=yes`，ssh 连上了却没挂上端口 |
-| `Host key verification failed` | 没先手动 ssh 一次收 host key。见 [deploy/seo-tunnel.service](deploy/seo-tunnel.service) |
+| `Load key ...: Permission denied` | 密钥还是 root 的。`sudo chown <跑隧道的用户>: /etc/seo-video-highlight/tunnel_key*` |
+| `Permission denied (publickey)` | 先排除上一行（读不到密钥会连带报这个）。密钥能读了还报，才是公钥没加进海外机器的 `authorized_keys` |
+| `Permission denied (open failed)` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:10080`，否则和 `permitlisten` 匹配不上 |
+| `Host key verification failed` | host key 收进了别的用户的 `known_hosts`。用跑隧道的那个用户再手动 ssh 一次 |
 | 前端报「剪辑服务拒绝了请求」 | 两边 `SEO_TOKEN` 不一致，或者一边配了一边没配。这个错误不会重试，看日志里括号里那句提示 |
 | 提交任务后卡在上传 | `OSS_*` 没设齐，或者 `OSS_ENDPOINT` 用成了 `-internal` 的内网接入点。跑 `npm run check:oss` |
 | `new URL()` 抛错 / `SEO_URL` 不生效 | `SEO_URL` 写成了裸 IP。必须带协议和端口：`http://127.0.0.1:10080` |

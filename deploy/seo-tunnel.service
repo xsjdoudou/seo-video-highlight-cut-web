@@ -13,20 +13,30 @@
 #
 # 装之前要做的三件事：
 #
-#   1. 国内这台生成一把专用密钥（别复用你自己的）
-#        ssh-keygen -t ed25519 -f /etc/seo-video-highlight/tunnel_key -N ''
-#        chmod 600 /etc/seo-video-highlight/tunnel_key
+#   1. 国内这台生成一把专用密钥（别复用你自己的）。
+#      ⚠ 用 sudo 生成的话属主是 root，而 unit 是以 User= 那个普通用户跑的，
+#        读不到会报 `Load key ...: Permission denied`，紧接着因为没钥匙可用
+#        而变成 `Permission denied (publickey)`——看着像密钥没加对，其实是本地权限。
+#        所以生成完一定要 chown 过去：
+#        sudo ssh-keygen -t ed25519 -f /etc/seo-video-highlight/tunnel_key -N ''
+#        sudo chown xieshiji:xieshiji /etc/seo-video-highlight/tunnel_key*
+#        sudo chmod 600 /etc/seo-video-highlight/tunnel_key
 #
 #   2. 把公钥加到**海外机器**的 ~/.ssh/authorized_keys，前面带上限制项：
 #        restrict,port-forwarding,permitlisten="127.0.0.1:10080" ssh-ed25519 AAAA...
 #      restrict 关掉 pty / agent 转发 / X11 / user-rc，再单独把端口转发开回来，
 #      permitlisten 锁死这把钥匙只能挂这一个端口。这样即使密钥泄漏，拿到的
 #      也只是「往海外机器挂一个 10080」，登不进 shell。
+#      （permitlisten 要 OpenSSH >= 7.8。对端太老的话去掉它，restrict + port-forwarding
+#        仍然有效，只是不再限定端口。）
 #
-#   3. 先手动跑一遍，把海外机器的 host key 收进 known_hosts，否则 unit 会
-#      因为交互式确认一直失败：
-#        ssh -i /etc/seo-video-highlight/tunnel_key <用户>@<海外IP> -N -R 10080:127.0.0.1:10080
+#   3. 先以 User= 那个用户手动跑一遍，把海外机器的 host key 收进它的 known_hosts，
+#      否则 unit 会因为交互式确认一直失败：
+#        ssh -i /etc/seo-video-highlight/tunnel_key -N \
+#            -R 127.0.0.1:10080:127.0.0.1:10080 ubuntu@34.214.4.115
 #      能挂住不退出就对了，Ctrl-C 掉，再 systemctl enable --now seo-tunnel。
+#      ⚠ known_hosts 是按用户存的。用 sudo 手动试的话收进的是 root 的 known_hosts，
+#        unit 以普通用户跑时照样会 Host key verification failed。
 #
 # 海外机器的 /etc/ssh/sshd_config 建议加（让 sshd 及时清掉断链留下的僵尸转发，
 # 不然隧道断了之后 10080 还被占着，新隧道挂不上去）：
@@ -45,16 +55,21 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
+User=xieshiji
 Environment=TUNNEL_KEY=/etc/seo-video-highlight/tunnel_key
-Environment=REMOTE=ubuntu@海外机器的公网IP
+Environment=REMOTE=ubuntu@34.214.4.115
 Environment=PORT=10080
 
 # -N            不执行远程命令，只做转发
 # -T            不分配 tty
-# -R            把远端的 127.0.0.1:PORT 转到本机的 127.0.0.1:PORT
-#               远端只绑 127.0.0.1（sshd 默认 GatewayPorts no），海外机器上
-#               只有本机进程能连，不对公网开放
+# -R 127.0.0.1:PORT:127.0.0.1:PORT
+#               把海外机器的 127.0.0.1:PORT 转到本机的 127.0.0.1:PORT。
+#               ⚠ 监听地址 127.0.0.1 要**显式写出来**，不能简写成 -R PORT:...。
+#               简写的话 ssh 发给对端的 bind address 是空的，而 authorized_keys 里的
+#               permitlisten="127.0.0.1:10080" 是按请求的地址字面匹配的，空地址
+#               匹配不上，sshd 直接拒绝转发。报错只有一句
+#               "Permission denied (open failed)"，很难联想到是写法问题。
+#               写全了之后 GatewayPorts 还是 no，对端依然只绑 127.0.0.1，不对公网开放。
 # ExitOnForwardFailure=yes
 #               端口没挂上就直接退出，让 systemd 重启重来。缺了这个的话
 #               ssh 会「连上了但没转发」地挂着，表现成请求全部 connection refused
@@ -69,7 +84,7 @@ ExecStart=/usr/bin/ssh -N -T \
     -o StrictHostKeyChecking=yes \
     -o IdentitiesOnly=yes \
     -o BatchMode=yes \
-    -R ${PORT}:127.0.0.1:${PORT} \
+    -R 127.0.0.1:${PORT}:127.0.0.1:${PORT} \
     ${REMOTE}
 
 # 断了就重连。RestartSec 别设太小：海外机器重启时 sshd 还没起来，
