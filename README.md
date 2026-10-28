@@ -42,8 +42,9 @@
    隧道的 `-R 127.0.0.1:10080:127.0.0.1:8649` 负责把它们接起来。
 3. **② 必须用 OSS 公网接入点。** 默认那套配置从内网 Nacos 读，给的是
    `oss-cn-shanghai-internal.aliyuncs.com`，只在阿里云 VPC 内部可达。海外机器连不上，
-   而且报错是连接超时，看不出原因。所以 `OSS_*` 必须在环境变量里设齐，
-   设齐了就完全不碰 Nacos。
+   而且报错是连接超时，看不出原因。所以 `OSS_AK` / `OSS_SK` / `OSS_ENDPOINT` /
+   `OSS_BUCKET` 必须在环境变量里设齐，设齐了就完全不碰 Nacos。源视频 URL 默认使用
+   OSS 临时签名，不需要 `OSS_CDN_URL` 或 CDN 权限。
 
 ### 国内那边怎么起
 
@@ -246,8 +247,8 @@ npm run check:oss        # OSS 凭证来源 / endpoint / bucket
 拿到 `404 task not found` 说明令牌已经被服务端认了（这个 id 本来就不存在），
 拿到 `401` 就是令牌不对。整个过程不创建任务，也不占 GPU。
 
-`check:oss` 打印的**来源必须是「环境变量」**，如果显示走了 Nacos 说明 `OSS_*` 没设齐，
-那条路在海外机器上早晚会断。
+`check:oss` 打印的**来源必须是「环境变量」**，如果显示走了 Nacos 说明 OSS 基础凭证没设齐，
+那条路在海外机器上早晚会断。默认 `OSS_URL_MODE=signed`，因此不要求 `OSS_CDN_URL`。
 
 ### OSS 凭证怎么灌到海外机器
 
@@ -349,8 +350,8 @@ sudo systemctl enable --now clip-api web
 | `Permission denied (open failed)` / `remote port forwarding failed` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:8649`，否则和 `permitlisten` 匹配不上 |
 | `Host key verification failed` | host key 收进了别的用户的 `known_hosts`。用跑隧道的那个用户再手动 ssh 一次 |
 | 前端报「剪辑服务拒绝了请求」 | 两边 `SEO_TOKEN` 不一致，或者一边配了一边没配。这个错误不会重试，看日志里括号里那句提示 |
-| 提交任务后卡在上传 | `OSS_*` 没设齐，或者 `OSS_ENDPOINT` 用成了 `-internal` 的内网接入点。跑 `npm run check:oss` |
+| 提交任务后卡在上传 | OSS 基础凭证没设齐，或者 `OSS_ENDPOINT` 用成了 `-internal` 的内网接入点。跑 `npm run check:oss` |
 | `new URL()` 抛错 / `SEO_URL` 不生效 | `SEO_URL` 写成了裸 IP。必须带协议和端口：`http://127.0.0.1:10080` |
-| 剪辑服务下不到源视频 | 和 `PUBLIC_BASE` 无关——交给下游的 `video_url` 永远是 OSS 地址。查 OSS 那一侧：对象传上去了吗、`OSS_CDN_URL` 拼出来的地址公网能不能下 |
+| 剪辑服务下不到源视频 | 和 `PUBLIC_BASE` 无关——交给下游的是 OSS 临时签名 URL。查签名是否过期、OSS endpoint 是否为公网接入点 |
 | 页面上视频 404 / 下载不了 | `PUBLIC_BASE` 不对。它是给**浏览器**用的地址前缀，必须是终端用户能访问到的域名，和国内那台没关系 |
 | 字幕是方块 | 缺中文字体，`apt install fonts-noto-cjk` |

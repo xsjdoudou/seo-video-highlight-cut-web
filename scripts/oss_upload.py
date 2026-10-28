@@ -27,7 +27,9 @@ URL 写进 --out 而不是 stdout：Nacos / titan 的日志会往 stdout 上打�
   OSS_SK           AccessKey Secret
   OSS_ENDPOINT     OSS 接入点，例如 https://oss-cn-beijing.aliyuncs.com（兼容 ENDPOINT）
   OSS_BUCKET       桶名（兼容 BUKET_NAME 这个历史拼写）
-  OSS_CDN_URL      拼 URL 用的 CDN 域名（兼容 AI_CENTER_CDN_URL / OSS_URL_HEAD）
+  OSS_URL_MODE     URL 模式：signed（默认）或 cdn
+  OSS_CDN_URL      cdn 模式下拼 URL 用的 CDN 域名（兼容 AI_CENTER_CDN_URL / OSS_URL_HEAD）
+  OSS_SIGNED_URL_EXPIRES  signed 模式的有效期，默认 21600 秒
   OSS_TMP_DIR      默认对象前缀，不设就用下面的 DEFAULT_TMP_DIR
   OSS_PREFIX       对象名前缀，优先级高于 OSS_TMP_DIR
   OSS_UTILS_REPO   只在走第 2 条时才用：提供 utils/oss_config.py 的仓库
@@ -42,6 +44,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_REPO = "/datadisk1/xieshiji/code/A-jogg-video-understanding/jogg-video-understanding"
 DEFAULT_TMP_DIR = "algo-dev/comfyui-data/comfyui-opensource/ComfyUI-Data/temp"
@@ -59,6 +62,9 @@ CREDENTIAL_ENV = {
     "cdn": ("OSS_CDN_URL", "AI_CENTER_CDN_URL", "OSS_URL_HEAD"),
 }
 
+DEFAULT_URL_MODE = "signed"
+DEFAULT_SIGNED_URL_EXPIRES = 6 * 60 * 60
+
 
 def _from_env(names: tuple[str, ...]) -> str:
     for name in names:
@@ -68,11 +74,26 @@ def _from_env(names: tuple[str, ...]) -> str:
     return ""
 
 
+def requested_url_mode() -> str:
+    mode = os.environ.get("OSS_URL_MODE", DEFAULT_URL_MODE).strip().lower()
+    if mode not in {"signed", "cdn"}:
+        raise SystemExit("OSS_URL_MODE 只能是 signed 或 cdn")
+    return mode
+
+
 def config_from_env() -> tuple[dict[str, str], list[str]]:
     """读环境变量，返回 (配置, 缺失项的推荐变量名)。"""
     config = {key: _from_env(names) for key, names in CREDENTIAL_ENV.items()}
-    missing = [names[0] for key, names in CREDENTIAL_ENV.items() if not config[key]]
+    mode = requested_url_mode()
+    required = ("ak", "sk", "endpoint", "bucket")
+    missing = [CREDENTIAL_ENV[key][0] for key in required if not config[key]]
+    if mode == "cdn" and not config["cdn"]:
+        missing.append("OSS_CDN_URL")
     config["tmp_dir"] = _from_env(("OSS_TMP_DIR",)) or DEFAULT_TMP_DIR
+    config["url_mode"] = mode
+    config["signed_url_expires"] = int(
+        os.environ.get("OSS_SIGNED_URL_EXPIRES", str(DEFAULT_SIGNED_URL_EXPIRES))
+    )
     return config, missing
 
 
@@ -109,8 +130,14 @@ def config_from_borrowed_repo() -> dict[str, str]:
         "bucket": BUKET_NAME,
         "cdn": AI_CENTER_CDN_URL,
         "tmp_dir": OSS_TMP_DIR or DEFAULT_TMP_DIR,
+        "url_mode": requested_url_mode(),
+        "signed_url_expires": int(
+            os.environ.get("OSS_SIGNED_URL_EXPIRES", str(DEFAULT_SIGNED_URL_EXPIRES))
+        ),
     }
-    missing = [key for key in CREDENTIAL_ENV if not config[key]]
+    missing = [key for key in ("ak", "sk", "endpoint", "bucket") if not config[key]]
+    if config["url_mode"] == "cdn" and not config["cdn"]:
+        missing.append("cdn")
     if missing:
         raise RuntimeError(f"Nacos 里的 OSS 配置不全，缺：{', '.join(missing)}")
     return config
@@ -180,6 +207,12 @@ def object_name(prefix: str, source: Path) -> str:
     return f"{prefix.strip('/')}/seo_web_{stamp}{suffix}"
 
 
+def log_safe_url(url: str) -> str:
+    """Do not write OSS signature parameters into service logs."""
+    parsed = urlsplit(url)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
 def upload(source: Path, prefix: str) -> str:
     import oss2
 
@@ -196,7 +229,11 @@ def upload(source: Path, prefix: str) -> str:
     else:
         bucket.put_object_from_file(key, str(source))
 
-    # URL 的拼法和 utils/oss_utils.py 保持一致：CDN 域名 + 对象名。
+    if config["url_mode"] == "signed":
+        # 源视频不需要长期公开；签名 URL 只给阿里云后端在任务期间下载。
+        return bucket.sign_url("GET", key, config["signed_url_expires"])
+
+    # CDN 模式和原来的行为一致：CDN 域名 + 对象名。
     return config["cdn"].rstrip("/") + "/" + key.lstrip("/")
 
 
@@ -247,9 +284,11 @@ def main() -> None:
                     env_line("OSS_SK", config["sk"]),
                     env_line("OSS_ENDPOINT", endpoint),
                     env_line("OSS_BUCKET", config["bucket"]),
-                    env_line("OSS_CDN_URL", config["cdn"]),
+                    env_line("OSS_URL_MODE", config["url_mode"]),
+                    env_line("OSS_SIGNED_URL_EXPIRES", str(config["signed_url_expires"])),
                     env_line("OSS_TMP_DIR", config["tmp_dir"]),
                 ]
+                + ([env_line("OSS_CDN_URL", config["cdn"])] if config["url_mode"] == "cdn" else [])
             )
         )
         return
@@ -260,7 +299,12 @@ def main() -> None:
         source = "环境变量" if not missing else "Nacos（借 OSS_UTILS_REPO 那个仓库）"
         print(f"[oss_upload] 凭证来源：{source}", file=sys.stderr)
         print(f"[oss_upload] endpoint={config['endpoint']} bucket={config['bucket']}", file=sys.stderr)
-        print(f"[oss_upload] cdn={config['cdn']} prefix={args.prefix or config['tmp_dir']}", file=sys.stderr)
+        print(
+            f"[oss_upload] url_mode={config['url_mode']} "
+            f"cdn={config['cdn'] or '(not required)'} "
+            f"prefix={args.prefix or config['tmp_dir']}",
+            file=sys.stderr,
+        )
         return
 
     if not args.file or not args.out:
@@ -278,7 +322,7 @@ def main() -> None:
         raise SystemExit(f"上传 OSS 失败：{exc}") from exc
 
     Path(args.out).write_text(url, encoding="utf-8")
-    print(f"[oss_upload] {source.name} → {url}", file=sys.stderr)
+    print(f"[oss_upload] {source.name} → {log_safe_url(url)}", file=sys.stderr)
 
 
 if __name__ == "__main__":
