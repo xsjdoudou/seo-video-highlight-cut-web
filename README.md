@@ -10,17 +10,17 @@
 │ 浏览器 ← vite / dist   │                 │ seo_server.py :8649  │
 │          ↕             │  ① HTTP + 令牌  │  （腾讯 ASR + 剪辑） │
 │ clip-api.mjs           │ ───────────────▶│                      │
-│   └ oss_upload.py      │                 └──────────┬───────────┘
+│                        │                 └──────────┬───────────┘
 └──────────┬─────────────┘                            │
-           │ ② 上传源视频                   ③ 下载源视频 / 回传成片
+           │ ② 直传源视频                    ③ 上传成片到 OSS
            ▼                                          ▼
-        ┌──────────────── 阿里云 OSS（公网接入点）────────────────┐
+        ┌────────────── 阿里云后端本地磁盘 ──────────────┐
         └──────────────────────────────────────────────────────┘
 ```
 
 国内那台是阿里云 ECS `i-uf659g4jleurwg5zoboz`（cn-shanghai），EIP `101.132.167.193`。
 
-跨境的只有 ① 和 ②，视频字节走 OSS 不走 ①。
+源视频通过现有 SSH 反向隧道直传阿里云后端，不再经过 OSS；成片仍由阿里云后端上传 OSS。
 
 **① 这一跳现在走 SSH 反向隧道，不是直连 EIP。** 那台 ECS 的安全组入方向规则我们
 没有权限改，海外机器直连 `101.132.167.193:10080` 是超时（包被丢了）。但它的**出方向**
@@ -40,11 +40,8 @@
 2. **端口两头不一样，由隧道对上。** 国内就用 `seo_server.py` 的默认端口 8649
    （裸跑 `python seo_server.py` 即可，**不用**带 `SEO_PORT=`），海外那头是 10080。
    隧道的 `-R 127.0.0.1:10080:127.0.0.1:8649` 负责把它们接起来。
-3. **② 必须用 OSS 公网接入点。** 默认那套配置从内网 Nacos 读，给的是
-   `oss-cn-shanghai-internal.aliyuncs.com`，只在阿里云 VPC 内部可达。海外机器连不上，
-   而且报错是连接超时，看不出原因。所以 `OSS_AK` / `OSS_SK` / `OSS_ENDPOINT` /
-   `OSS_BUCKET` 必须在环境变量里设齐，设齐了就完全不碰 Nacos。源视频 URL 默认使用
-   OSS 临时签名，不需要 `OSS_CDN_URL` 或 CDN 权限。
+3. **③ 仍需在阿里云后端配置 OSS。** 源视频不再上传 OSS，但剪辑完成后，后端会把成片
+   上传 OSS 并把成片 URL 返回给海外前端。OSS 凭证只需要配置在阿里云后端。
 
 ### 国内那边怎么起
 
@@ -229,7 +226,7 @@ npm run build
 
 sudo mkdir -p /etc/seo-video-highlight
 sudo cp .env.example /etc/seo-video-highlight/web.env
-sudo vi   /etc/seo-video-highlight/web.env   # 填 SEO_URL / SEO_TOKEN / PUBLIC_BASE / OSS_*
+sudo vi   /etc/seo-video-highlight/web.env   # 填 SEO_URL / SOURCE_UPLOAD_URL / SEO_TOKEN / PUBLIC_BASE
 sudo chmod 600 /etc/seo-video-highlight/web.env
 ```
 
@@ -240,58 +237,19 @@ sudo chmod 600 /etc/seo-video-highlight/web.env
 
 ```bash
 npm run check:seo        # SEO_URL 格式 → 连通性 → 令牌，三步分开报
-npm run check:oss        # OSS 凭证来源 / endpoint / bucket
 ```
 
 `check:seo` 全程不打印令牌，只说它好不好使。它第三步是 GET 一个随机的 `task_id`：
 拿到 `404 task not found` 说明令牌已经被服务端认了（这个 id 本来就不存在），
 拿到 `401` 就是令牌不对。整个过程不创建任务，也不占 GPU。
 
-`check:oss` 打印的**来源必须是「环境变量」**，如果显示走了 Nacos 说明 OSS 基础凭证没设齐，
-那条路在海外机器上早晚会断。默认 `OSS_URL_MODE=signed`，因此不要求 `OSS_CDN_URL`。
+### OSS 凭证放在阿里云后端
 
-### OSS 凭证怎么灌到海外机器
+海外机器不再需要 `OSS_*`。请把后端的 `OSS_AK` / `OSS_SK` / `ENDPOINT` /
+`BUKET_NAME` 配置在阿里云 `seo_server.py` 的运行环境中，成片上传仍依赖它们。
 
-海外机器连不上内网 Nacos，`OSS_*` 只能手工设。别手抄、更别贴进聊天或者 issue——
-让国内那台把值导出来，走一条不经过第三方的路。
-
-```bash
-# 在国内那台上跑（它能读到 Nacos）
-cd /datadisk1/xieshiji/code/seo-video-highlight-cut-web
-python3 scripts/oss_upload.py --export-env 2>/dev/null
-```
-
-`2>/dev/null` 滤掉 Nacos 的 INFO 和提示，屏幕上只剩 6 行 `KEY=value`。复制，
-然后在海外机器上：
-
-```bash
-cat >> ~/code/seo-video-highlight-cut-web/.env <<'EOF'
-<粘贴那 6 行>
-EOF
-chmod 600 ~/code/seo-video-highlight-cut-web/.env
-npm run check:oss      # 来源要显示「环境变量」
-```
-
-`<<'EOF'` 的单引号不能省，否则值里的 `$`、反引号会被 shell 解释掉。
-
-要是国内那台有一把**能在海外机器上执行命令**的密钥，可以一步到位：
-
-```bash
-python3 scripts/oss_upload.py --export-env | ssh <用户>@<海外IP> \
-    'cat >> ~/code/seo-video-highlight-cut-web/.env'
-```
-
-**隧道那把钥匙不行**——它带着 `restrict`，只能挂端口，跑不了命令，
-会报 `Permission denied (publickey)`。那是故意的，别为了图方便把限制去掉。
-
-`--export-env` 只往 stdout 打 `KEY=value`，提示全走 stderr，所以能直接管道。
-它会顺手把 `OSS_ENDPOINT` 里的 `-internal` 去掉换成公网接入点——Nacos 里存的是
-`oss-cn-*-internal.aliyuncs.com`，只在阿里云 VPC 内部可达，海外机器照抄过去
-每次上传都会卡到超时，而且报错看不出是接入点的问题。
-
-追加就行，不用先删旧的：同一个文件里重复的键，**后面的覆盖前面的**，
-所以 `.env` 里原来那几行空的 `OSS_AK=` 会被追加的真值盖掉。
-（但命令行临时给的 `OSS_AK=xxx npm run dev` 仍然赢过整个文件。）
+后端从 Nacos 读取时无需在海外机器导出这些变量；如果后端改为环境变量配置，直接写入
+阿里云 `seo-server.service` 的环境文件即可，不要写入海外前端的 `.env`。
 
 systemd 那份配置文件要这样验：
 
@@ -350,8 +308,8 @@ sudo systemctl enable --now clip-api web
 | `Permission denied (open failed)` / `remote port forwarding failed` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:8649`，否则和 `permitlisten` 匹配不上 |
 | `Host key verification failed` | host key 收进了别的用户的 `known_hosts`。用跑隧道的那个用户再手动 ssh 一次 |
 | 前端报「剪辑服务拒绝了请求」 | 两边 `SEO_TOKEN` 不一致，或者一边配了一边没配。这个错误不会重试，看日志里括号里那句提示 |
-| 提交任务后卡在上传 | OSS 基础凭证没设齐，或者 `OSS_ENDPOINT` 用成了 `-internal` 的内网接入点。跑 `npm run check:oss` |
+| 提交任务后卡在直传 | 检查 `SOURCE_UPLOAD_URL`、SSH 反向隧道，以及阿里云 `seo_server.py` 是否在监听 8649 |
 | `new URL()` 抛错 / `SEO_URL` 不生效 | `SEO_URL` 写成了裸 IP。必须带协议和端口：`http://127.0.0.1:10080` |
-| 剪辑服务下不到源视频 | 和 `PUBLIC_BASE` 无关——交给下游的是 OSS 临时签名 URL。查签名是否过期、OSS endpoint 是否为公网接入点 |
+| 剪辑服务拿不到源视频 | 检查阿里云 `/v1/seo/upload` 日志和 `runs/incoming` 目录，确认隧道没有中途断开 |
 | 页面上视频 404 / 下载不了 | `PUBLIC_BASE` 不对。它是给**浏览器**用的地址前缀，必须是终端用户能访问到的域名，和国内那台没关系 |
 | 字幕是方块 | 缺中文字体，`apt install fonts-noto-cjk` |

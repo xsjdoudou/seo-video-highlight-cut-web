@@ -1,6 +1,6 @@
 // 把「Get clips in 1 click」接到真正的高光剪辑服务上。
 //
-// 浏览器拿不出服务端要的能被 Python 服务直接下载的 video_url，这一层负责上传和任务编排：
+// 浏览器拿不出服务端要的能被 Python 服务直接下载的文件，这一层负责上传和任务编排：
 //
 //   POST /api/upload        原始字节 + x-file-name 头，落盘，返回可下载的 URL
 //   GET  /uploads/<name>    把落盘的文件（和加好字幕的成片）发出去，支持 Range
@@ -24,10 +24,10 @@
 // 环境变量：
 //   CLIP_API_PORT   独立模式监听端口        默认 10051
 //   PUBLIC_BASE     给浏览器用的地址前缀      默认 http://127.0.0.1:10050（vite dev）
-//                   上传回执和成片链接拿它拼；下游 /v1/seo 拿到的始终是 OSS 地址，
-//                   不读这个变量（见 uploadToOss 上面那段注释）。
+//                   上传回执和成片链接拿它拼。
 //   SEO_URL         高光剪辑服务            默认 http://127.0.0.1:8649
 //   SEO_PATH        接口路径                默认 /v1/seo
+//   SOURCE_UPLOAD_URL  源视频直传地址       默认 ${SEO_URL}/v1/seo/upload
 //   SEO_TOKEN       剪辑服务鉴权令牌        默认空（服务端也没配时才可以留空）
 //   SEO_POLL_INTERVAL_MS   轮询间隔         默认 5000
 //   SEO_REQUEST_TIMEOUT_MS 单次请求超时     默认 30000
@@ -37,29 +37,15 @@
 //   DESUB_TOKEN     去字幕鉴权
 //   UPLOAD_DIR      落盘目录                默认 <repo>/.uploads
 //
-// OSS 上传（scripts/oss_upload.py，细节见那个文件开头）：
-//   OSS_AK / OSS_SK / OSS_ENDPOINT / OSS_BUCKET / OSS_CDN_URL
-//                   都设齐了就直接用，不碰 Nacos；缺任何一个就退回去借
-//                   OSS_UTILS_REPO 那个仓库的 Nacos 配置。
-//   OSS_UTILS_REPO  上面那条兜底路径用的仓库，环境变量齐了就不需要它存在
-//   OSS_PREFIX      对象名前缀
-//   OSS_PYTHON      跑上传脚本的解释器      默认 python3
-//
 // 腾讯云 ASR 由 SEO 服务负责，需要在 SEO 服务进程中配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY。
 //
-// 这一层和剪辑服务之间只传 JSON，视频字节走 OSS，所以两者可以不在同一台机器、
-// 甚至不在同一个国家。跨境部署时除了把 SEO_URL 指过去，还要注意两件事：
-//   1. OSS_ENDPOINT 必须用公网接入点（oss-cn-*.aliyuncs.com），
-//      默认那套 Nacos 配置给的是 -internal 的内网接入点，VPC 外面连不上。
-//   2. 上面那组 OSS_* 必须设齐，因为 Nacos 本身也只在内网可达。
-//      部署完先跑 `python3 scripts/oss_upload.py --check` 确认凭证读得到。
+// 源视频通过现有 SSH 反向隧道直传阿里云；成片仍由阿里云服务上传 OSS。
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import http from 'node:http'
 import https from 'node:https'
-import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -84,6 +70,7 @@ const CLIP_API_PORT = Number(env('CLIP_API_PORT', 10051))
 const PUBLIC_BASE = String(env('PUBLIC_BASE', 'http://127.0.0.1:10050')).replace(/\/+$/, '')
 const SEO_URL = String(env('SEO_URL', 'http://127.0.0.1:8649')).replace(/\/+$/, '')
 const SEO_PATH = env('SEO_PATH', '/v1/seo')
+const SOURCE_UPLOAD_URL = String(env('SOURCE_UPLOAD_URL', `${SEO_URL}/v1/seo/upload`)).replace(/\/+$/, '')
 // 剪辑服务的访问令牌。两边都留空只适合本机联调；跨境部署时 SEO_URL 指向公网，
 // 这里和服务端的 SEO_TOKEN 必须一起配上，否则等于把那台机器的 GPU 开放给所有人。
 const SEO_TOKEN = env('SEO_TOKEN', '').trim()
@@ -93,13 +80,6 @@ const SEO_REQUEST_TIMEOUT_MS = Number(env('SEO_REQUEST_TIMEOUT_MS', 30000))
 const SEO_TASK_TIMEOUT_MS = Number(env('SEO_TASK_TIMEOUT_MS', 2 * 60 * 60 * 1000))
 // 丢几次轮询是跨境链路的常态，连续失败这么多次才判定任务真的断了。
 const SEO_POLL_MAX_ERRORS = Number(env('SEO_POLL_MAX_ERRORS', 10))
-// TODO: 暂时借 A-jogg-video-understanding 的 OSS 配置，后面换成正式的桶/路径时改这里。
-// 只在凭证要从 Nacos 取时才需要；OSS_AK/OSS_SK/... 都设好了的话这个仓库不用存在。
-const OSS_UTILS_REPO = path.resolve(
-  env('OSS_UTILS_REPO', '/datadisk1/xieshiji/code/A-jogg-video-understanding/jogg-video-understanding'),
-)
-const OSS_PYTHON = env('OSS_PYTHON', 'python3')
-const OSS_PREFIX = env('OSS_PREFIX', '')
 const DESUB_URL = env('DESUB_URL', '')
 const DESUB_TOKEN = env('DESUB_TOKEN', '')
 const UPLOAD_DIR = path.resolve(env('UPLOAD_DIR', path.join(REPO_ROOT, '.uploads')))
@@ -170,7 +150,7 @@ function mb(bytes) {
 // label 会直接显示在按钮上，跟页面其它文案一样用英文。
 const STAGES = {
   fetch: { label: 'Fetching your video…', from: 2, to: 8 },
-  oss: { label: 'Uploading your video…', from: 8, to: 18 },
+  transfer: { label: 'Sending your video to the processing server…', from: 8, to: 18 },
   desub: { label: 'Removing burned-in subtitles…', from: 18, to: 22 },
   asr: { label: 'Transcribing speech…', from: 22, to: 30 },
   clip: { label: 'Finding and cutting highlights…', from: 30, to: 90 },
@@ -200,7 +180,7 @@ class ApiError extends Error {
  */
 const STAGE_FAILURES = {
   fetch: "We couldn't fetch that video. Check the link still opens, or upload the file again.",
-  oss: 'Uploading your video was interrupted. Please try again.',
+  transfer: 'Sending your video to the processing server was interrupted. Please try again.',
   desub: "Removing the burned-in subtitles didn't work. Turn that switch off and try again.",
   asr: "We couldn't find any speech in this video. Try a clip where someone is talking.",
   clip: "We couldn't find any highlights in this video. Try a different clip, or come back in a bit.",
@@ -519,37 +499,61 @@ async function materializeSource(videoUrl) {
   return { file, temporary: true }
 }
 
-/**
- * 传 OSS，拿一个公网能下的地址。
- *
- * /v1/seo 要自己去下 video_url，`http://127.0.0.1:10050/uploads/...` 只在
- * 两个服务同机时才碰巧能用；换台机器、或者下游换成 K8s 里的 Pod 就废了。
- * 所以不管源是链接还是本地文件，一律先过一遍 OSS，再把 OSS 地址交给下游。
- */
-async function uploadToOss(file) {
-  const out = path.join(os.tmpdir(), `oss-url-${crypto.randomUUID()}.txt`)
-  const script = path.join(REPO_ROOT, 'scripts', 'oss_upload.py')
-  const args = [script, '--file', file, '--out', out]
-  if (OSS_PREFIX) args.push('--prefix', OSS_PREFIX)
+/** Stream the source file through the existing SSH tunnel; do not buffer it or upload it to OSS. */
+function uploadSourceToBackend(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    let stat
+    try {
+      stat = fs.statSync(file)
+    } catch (error) {
+      reject(new ApiError(`读取源视频失败：${error.message}`, 502))
+      return
+    }
 
-  try {
-    // OSS_UTILS_REPO 只有在退回 Nacos 取凭证时才用得上。海外机器上那个仓库根本不存在，
-    // 而 spawn 碰到不存在的 cwd 会直接报错——所以目录在才传，不在就让它用当前目录跑，
-    // 凭证从环境变量读（见 oss_upload.py 开头那段说明）。
-    const cwd = fs.existsSync(OSS_UTILS_REPO) ? OSS_UTILS_REPO : undefined
-    await run(OSS_PYTHON, args, {
-      ...(cwd ? { cwd } : {}),
-      env: { ...process.env, OSS_UTILS_REPO },
+    const target = new URL(SOURCE_UPLOAD_URL)
+    const transport = target.protocol === 'https:' ? https : http
+    const headers = {
+      Accept: 'application/json',
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': stat.size,
+      'X-File-Name': encodeURIComponent(path.basename(file)),
+    }
+    if (SEO_TOKEN) headers.Authorization = SEO_TOKEN.startsWith('Bearer ') ? SEO_TOKEN : `Bearer ${SEO_TOKEN}`
+
+    const request = transport.request(target, { method: 'POST', headers }, (response) => {
+      const chunks = []
+      response.on('data', (chunk) => chunks.push(chunk))
+      response.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8')
+        let payload = null
+        try {
+          payload = text ? JSON.parse(text) : null
+        } catch {
+          payload = null
+        }
+        const status = response.statusCode ?? 0
+        if (status < 200 || status >= 300) {
+          const detail = payload?.message || text.slice(0, 300) || '无响应体'
+          const error = new ApiError(`源视频直传失败：HTTP ${status}：${detail}`, 502)
+          error.upstreamStatus = status
+          reject(error)
+          return
+        }
+        const sourceId = payload?.data?.source_id
+        if (!sourceId) {
+          reject(new ApiError(`源视频直传响应缺少 source_id：${text.slice(0, 200)}`, 502))
+          return
+        }
+        resolve(sourceId)
+      })
     })
-    const url = (await fsp.readFile(out, 'utf8')).trim()
-    if (!/^https?:\/\//.test(url)) throw new ApiError(`OSS 没返回可用的地址：${url.slice(0, 200)}`, 502)
-    return url
-  } catch (error) {
-    if (error instanceof ApiError) throw error
-    throw new ApiError(`上传 OSS 失败：${error.message}`, 502)
-  } finally {
-    await fsp.rm(out, { force: true })
-  }
+    request.setTimeout(0)
+    request.on('error', (error) => reject(new ApiError(`源视频直传失败：${error.message}`, 502)))
+    const stream = fs.createReadStream(file)
+    stream.on('error', (error) => request.destroy(error))
+    stream.on('data', (chunk) => onProgress?.(Math.min(1, stream.bytesRead / stat.size)))
+    stream.pipe(request)
+  })
 }
 
 /** `[url](url)` 是下游当前的返回格式，取括号里的那个。 */
@@ -562,7 +566,7 @@ function unwrapUrl(value) {
 /**
  * 提交高光剪辑任务，然后轮询到出结果。
  *
- * 剪辑服务只接收 video_url，ASR 在服务端完成，前端不用再识别一次。
+ * 剪辑服务接收 source_id，ASR 在服务端完成，前端不用再识别一次。
  *
  * 这里以前是一个同步长请求：POST 出去，几分钟到几十分钟后才回来。两个服务同机
  * 跑没问题，一旦分处两地（前端在海外、GPU 留在国内），这种长时间不出流量的连接
@@ -584,12 +588,12 @@ function describeAuthFailure(error) {
   return new ApiError(`剪辑服务拒绝了请求（${hint}）：${error.message}`, 502)
 }
 
-async function runHighlightCut(videoUrl, onProgress) {
+async function runHighlightCut(sourceId, onProgress) {
   let submitted
   try {
     submitted = await requestJson(
       `${SEO_URL}${SEO_PATH}`,
-      { video_url: videoUrl },
+      { source_id: sourceId },
       { token: SEO_TOKEN, timeoutMs: SEO_REQUEST_TIMEOUT_MS },
     )
   } catch (error) {
@@ -842,23 +846,19 @@ async function runJob(job) {
     setStage(job, 'fetch', 0.3)
     source = await materializeSource(job.input.videoUrl)
 
-    setStage(job, 'oss', 0.3)
-    let videoUrl = await uploadToOss(source.file)
+    setStage(job, 'transfer', 0.3)
+    const sourceId = await uploadSourceToBackend(source.file, (ratio) => setStage(job, 'transfer', ratio))
+    log(`${shortId(job.id)}   源视频已直传阿里云（${sourceId}）`)
     if (job.input.removeSubtitles) {
-      if (DESUB_URL) {
-        setStage(job, 'desub', 0.3)
-        videoUrl = await runDesub(videoUrl)
-      } else {
-        // 去字幕接口还没接，先跳过而不是让整趟任务失败。
-        job.warnings.push('Subtitle removal is not available yet, so that step was skipped.')
-      }
+      // 直传模式没有公网源 URL；现有去字幕接口只接受 video_url，先明确跳过。
+      job.warnings.push('Subtitle removal is not available for direct uploads yet, so that step was skipped.')
     }
 
     setStage(job, 'asr', 0.3)
     setStage(job, 'clip', 0)
     clip = clipProgress(job, job.input.duration)
     let lastStage = ''
-    const result = await runHighlightCut(videoUrl, (status) => {
+    const result = await runHighlightCut(sourceId, (status) => {
       if (status.task_id && status.task_id !== job.taskId) {
         job.taskId = status.task_id
         // 跨境排查全靠这个 id 把两边的日志对上。
