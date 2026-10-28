@@ -15,13 +15,16 @@
 
 import http from 'node:http'
 import crypto from 'node:crypto'
+import { env } from './env.mjs'
 
-const PROXY_PORT = Number(process.env.PROXY_PORT ?? 10060)
-const PROXY_HOST = process.env.PROXY_HOST ?? '127.0.0.1'
-const TARGET_PORT = Number(process.env.TARGET_PORT ?? 4173)
-const CLIP_API_PORT = Number(process.env.CLIP_API_PORT ?? 10051)
-const AUTH_USER = process.env.AUTH_USER ?? 'demo'
-const AUTH_PASS = process.env.AUTH_PASS ?? crypto.randomBytes(12).toString('base64url')
+const PROXY_PORT = Number(env('PROXY_PORT', 10060))
+const PROXY_HOST = env('PROXY_HOST', '127.0.0.1')
+const TARGET_PORT = Number(env('TARGET_PORT', 4173))
+const CLIP_API_PORT = Number(env('CLIP_API_PORT', 10051))
+const AUTH_USER = env('AUTH_USER', 'demo')
+// 走 env() 而不是 `??`：.env.example 里 AUTH_PASS 是留空的，`??` 会把 '' 当成
+// 「设过了」，密码变成空串——等于这道 Basic Auth 形同虚设。留空必须走随机生成。
+const AUTH_PASS = env('AUTH_PASS', crypto.randomBytes(12).toString('base64url'))
 
 const REALM = 'seo-video-highlight preview'
 const expected = 'Basic ' + Buffer.from(`${AUTH_USER}:${AUTH_PASS}`).toString('base64')

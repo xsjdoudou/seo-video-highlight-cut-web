@@ -20,11 +20,14 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { env } from './env.mjs'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-export const DATA_DIR = path.resolve(process.env.DATA_DIR ?? path.join(REPO_ROOT, 'data'))
-export const SIGNUP_BONUS_CREDITS = Math.max(0, Number(process.env.SIGNUP_BONUS_CREDITS ?? 100))
+// env() 而不是 `??`：留空的 .env 行会让 `??` 的默认值失效，见 scripts/env.mjs。
+// 这两项尤其不能变空——DATA_DIR='' 会把数据目录解析成当前工作目录。
+export const DATA_DIR = path.resolve(env('DATA_DIR', path.join(REPO_ROOT, 'data')))
+export const SIGNUP_BONUS_CREDITS = Math.max(0, Number(env('SIGNUP_BONUS_CREDITS', 100)))
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const RECHARGES_FILE = path.join(DATA_DIR, 'recharges.jsonl')

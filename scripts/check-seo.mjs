@@ -20,11 +20,13 @@
 import crypto from 'node:crypto'
 import http from 'node:http'
 import https from 'node:https'
+import { env } from './env.mjs'
 
-const SEO_URL = (process.env.SEO_URL ?? 'http://127.0.0.1:8649').replace(/\/+$/, '')
-const SEO_PATH = process.env.SEO_PATH ?? '/v1/seo'
-const SEO_TOKEN = (process.env.SEO_TOKEN ?? '').trim()
-const TIMEOUT_MS = Number(process.env.SEO_REQUEST_TIMEOUT_MS ?? 15000)
+// env() 而不是 `??`：.env 里留空的那一行会让 `??` 的默认值失效，见 scripts/env.mjs。
+const SEO_URL = String(env('SEO_URL', 'http://127.0.0.1:8649')).replace(/\/+$/, '')
+const SEO_PATH = env('SEO_PATH', '/v1/seo')
+const SEO_TOKEN = env('SEO_TOKEN', '').trim()
+const TIMEOUT_MS = Number(env('SEO_REQUEST_TIMEOUT_MS', 15000))
 
 const problems = []
 const ok = (text) => console.log(`  \x1b[32m✓\x1b[0m ${text}`)

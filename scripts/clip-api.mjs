@@ -75,32 +75,34 @@ import {
   listAssetsByEmail,
   upsertUser,
 } from './store.mjs'
+import { env } from './env.mjs'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-const CLIP_API_PORT = Number(process.env.CLIP_API_PORT ?? 10051)
-const PUBLIC_BASE = (process.env.PUBLIC_BASE ?? 'http://127.0.0.1:10050').replace(/\/+$/, '')
-const SEO_URL = (process.env.SEO_URL ?? 'http://127.0.0.1:8649').replace(/\/+$/, '')
-const SEO_PATH = process.env.SEO_PATH ?? '/v1/seo'
+const CLIP_API_PORT = Number(env('CLIP_API_PORT', 10051))
+// 留空等于没设，用默认值——.env 里 `PUBLIC_BASE=` 这一行不该把默认值废掉，见 env.mjs。
+const PUBLIC_BASE = String(env('PUBLIC_BASE', 'http://127.0.0.1:10050')).replace(/\/+$/, '')
+const SEO_URL = String(env('SEO_URL', 'http://127.0.0.1:8649')).replace(/\/+$/, '')
+const SEO_PATH = env('SEO_PATH', '/v1/seo')
 // 剪辑服务的访问令牌。两边都留空只适合本机联调；跨境部署时 SEO_URL 指向公网，
 // 这里和服务端的 SEO_TOKEN 必须一起配上，否则等于把那台机器的 GPU 开放给所有人。
-const SEO_TOKEN = process.env.SEO_TOKEN ?? ''
+const SEO_TOKEN = env('SEO_TOKEN', '').trim()
 // 轮询参数。跨境链路上单次请求必须短，任务总时长才可以很长。
-const SEO_POLL_INTERVAL_MS = Number(process.env.SEO_POLL_INTERVAL_MS ?? 5000)
-const SEO_REQUEST_TIMEOUT_MS = Number(process.env.SEO_REQUEST_TIMEOUT_MS ?? 30000)
-const SEO_TASK_TIMEOUT_MS = Number(process.env.SEO_TASK_TIMEOUT_MS ?? 2 * 60 * 60 * 1000)
+const SEO_POLL_INTERVAL_MS = Number(env('SEO_POLL_INTERVAL_MS', 5000))
+const SEO_REQUEST_TIMEOUT_MS = Number(env('SEO_REQUEST_TIMEOUT_MS', 30000))
+const SEO_TASK_TIMEOUT_MS = Number(env('SEO_TASK_TIMEOUT_MS', 2 * 60 * 60 * 1000))
 // 丢几次轮询是跨境链路的常态，连续失败这么多次才判定任务真的断了。
-const SEO_POLL_MAX_ERRORS = Number(process.env.SEO_POLL_MAX_ERRORS ?? 10)
+const SEO_POLL_MAX_ERRORS = Number(env('SEO_POLL_MAX_ERRORS', 10))
 // TODO: 暂时借 A-jogg-video-understanding 的 OSS 配置，后面换成正式的桶/路径时改这里。
 // 只在凭证要从 Nacos 取时才需要；OSS_AK/OSS_SK/... 都设好了的话这个仓库不用存在。
 const OSS_UTILS_REPO = path.resolve(
-  process.env.OSS_UTILS_REPO ?? '/datadisk1/xieshiji/code/A-jogg-video-understanding/jogg-video-understanding',
+  env('OSS_UTILS_REPO', '/datadisk1/xieshiji/code/A-jogg-video-understanding/jogg-video-understanding'),
 )
-const OSS_PYTHON = process.env.OSS_PYTHON ?? 'python3'
-const OSS_PREFIX = process.env.OSS_PREFIX ?? ''
-const DESUB_URL = process.env.DESUB_URL ?? ''
-const DESUB_TOKEN = process.env.DESUB_TOKEN ?? ''
-const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR ?? path.join(REPO_ROOT, '.uploads'))
+const OSS_PYTHON = env('OSS_PYTHON', 'python3')
+const OSS_PREFIX = env('OSS_PREFIX', '')
+const DESUB_URL = env('DESUB_URL', '')
+const DESUB_TOKEN = env('DESUB_TOKEN', '')
+const UPLOAD_DIR = path.resolve(env('UPLOAD_DIR', path.join(REPO_ROOT, '.uploads')))
 
 /** 上传文件保留多久，超过就在下次上传时顺手清掉。 */
 const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
