@@ -252,23 +252,41 @@ npm run check:oss        # OSS 凭证来源 / endpoint / bucket
 ### OSS 凭证怎么灌到海外机器
 
 海外机器连不上内网 Nacos，`OSS_*` 只能手工设。别手抄、更别贴进聊天或者 issue——
-让国内那台直接把值推过去：
+让国内那台把值导出来，走一条不经过第三方的路。
 
 ```bash
 # 在国内那台上跑（它能读到 Nacos）
 cd /datadisk1/xieshiji/code/seo-video-highlight-cut-web
-python3 scripts/oss_upload.py --export-env | ssh <用户>@<海外IP> \
-    'cat >> ~/code/seo-video-highlight-cut-web/.env && chmod 600 ~/code/seo-video-highlight-cut-web/.env'
+python3 scripts/oss_upload.py --export-env 2>/dev/null
 ```
 
-`--export-env` 只往 stdout 打 `KEY=value`，提示走 stderr，所以可以直接管道。
+`2>/dev/null` 滤掉 Nacos 的 INFO 和提示，屏幕上只剩 6 行 `KEY=value`。复制，
+然后在海外机器上：
+
+```bash
+cat >> ~/code/seo-video-highlight-cut-web/.env <<'EOF'
+<粘贴那 6 行>
+EOF
+chmod 600 ~/code/seo-video-highlight-cut-web/.env
+npm run check:oss      # 来源要显示「环境变量」
+```
+
+`<<'EOF'` 的单引号不能省，否则值里的 `$`、反引号会被 shell 解释掉。
+
+要是国内那台有一把**能在海外机器上执行命令**的密钥，可以一步到位：
+
+```bash
+python3 scripts/oss_upload.py --export-env | ssh <用户>@<海外IP> \
+    'cat >> ~/code/seo-video-highlight-cut-web/.env'
+```
+
+**隧道那把钥匙不行**——它带着 `restrict`，只能挂端口，跑不了命令，
+会报 `Permission denied (publickey)`。那是故意的，别为了图方便把限制去掉。
+
+`--export-env` 只往 stdout 打 `KEY=value`，提示全走 stderr，所以能直接管道。
 它会顺手把 `OSS_ENDPOINT` 里的 `-internal` 去掉换成公网接入点——Nacos 里存的是
 `oss-cn-*-internal.aliyuncs.com`，只在阿里云 VPC 内部可达，海外机器照抄过去
 每次上传都会卡到超时，而且报错看不出是接入点的问题。
-
-> 这条管道里走的是明文 AK/SK。用的是你自己登录海外机器那把钥匙（不是隧道那把，
-> 那把加了 `restrict`，跑不了命令）。推完在海外机器上 `npm run check:oss` 验，
-> 来源要显示「环境变量」。
 
 追加就行，不用先删旧的：同一个文件里重复的键，**后面的覆盖前面的**，
 所以 `.env` 里原来那几行空的 `OSS_AK=` 会被追加的真值盖掉。
