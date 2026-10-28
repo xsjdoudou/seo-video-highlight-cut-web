@@ -7,7 +7,7 @@
 ```
   海外机器                                     国内 GPU 机器
 ┌────────────────────────┐                 ┌──────────────────────┐
-│ 浏览器 ← vite / dist   │                 │ seo_server.py :10080 │
+│ 浏览器 ← vite / dist   │                 │ seo_server.py :8649  │
 │          ↕             │  ① HTTP + 令牌  │  （腾讯 ASR + 剪辑） │
 │ clip-api.mjs           │ ───────────────▶│                      │
 │   └ oss_upload.py      │                 └──────────┬───────────┘
@@ -30,15 +30,16 @@
 ```
 海外 clip-api ──▶ 127.0.0.1:10080 ──┐
                                     │ SSH 隧道（国内发起的那条连接）
-国内 seo_server.py :10080 ◀──────────┘
+国内 seo_server.py :8649  ◀──────────┘
 ```
 
 三件事决定了海外机器能不能跑通：
 
 1. **① 要带令牌。** `seo_server.py` 配了 `SEO_TOKEN` 之后，不带令牌的请求一律 `401`。
    两边的值必须一模一样。走隧道也一样要带——隧道只解决「连得上」，不解决鉴权。
-2. **① 的端口是 10080。** `seo_server.py` 读 `os.getenv("SEO_PORT", "8649")`，默认值是
-   8649。国内起服务时必须 `SEO_PORT=10080`，隧道两头也都用 10080。
+2. **端口两头不一样，由隧道对上。** 国内就用 `seo_server.py` 的默认端口 8649
+   （裸跑 `python seo_server.py` 即可，**不用**带 `SEO_PORT=`），海外那头是 10080。
+   隧道的 `-R 127.0.0.1:10080:127.0.0.1:8649` 负责把它们接起来。
 3. **② 必须用 OSS 公网接入点。** 默认那套配置从内网 Nacos 读，给的是
    `oss-cn-shanghai-internal.aliyuncs.com`，只在阿里云 VPC 内部可达。海外机器连不上，
    而且报错是连接超时，看不出原因。所以 `OSS_*` 必须在环境变量里设齐，
@@ -48,18 +49,26 @@
 
 ```bash
 cd /datadisk1/xieshiji/code/seo-jogg-video-highlight-cut
-SEO_PORT=10080 SEO_TOKEN=<和海外同一个值> python seo_server.py
+python seo_server.py
 ```
 
-`make_server("", port, app)` 绑的是 `0.0.0.0`，所以起好之后 10080 就对公网开着了，
-挡在前面的只有 `SEO_TOKEN`。启动日志里必须看到这一行：
+就这一条，**不带任何环境变量**。端口是它自己的默认值 8649，令牌从 Nacos 的
+`seo_token` 读。（踩过一次：之前要求带 `SEO_PORT=10080`，结果重启时漏了，
+隧道照常挂着但转发不到服务上，报 `connect_to 127.0.0.1 port 10080: failed`。
+现在端口差异交给隧道的 `-R` 处理，这边不用记了。）
+
+启动日志里必须看到这一行：
 
 ```
 接口鉴权已开启，调用方需要带上 Authorization: Bearer <SEO_TOKEN>
 ```
 
-看到的是 `未配置 SEO_TOKEN，接口无鉴权` 就立刻停掉——那种状态下任何人扫到
-`101.132.167.193:10080` 都能白嫖这台机器的 GPU。
+看到的是 `未配置 SEO_TOKEN，接口无鉴权` 就立刻停掉——`make_server("", port, app)`
+绑的是 `0.0.0.0`，8649 对公网是开着的，挡在前面的只有 `SEO_TOKEN`，
+没有它谁扫到都能白嫖这台机器的 GPU。
+
+（更稳的做法是让它只绑 `127.0.0.1`——走隧道之后外部本来就不需要直连。
+那要改 `seo_server.py` 里的 `make_server("", port, app)`，暂时没动。）
 
 ## 连不上又改不了安全组
 
@@ -78,25 +87,32 @@ SEO_PORT=10080 SEO_TOKEN=<和海外同一个值> python seo_server.py
 安全组对**出方向**是全放通的，所以反过来由国内发起连接就绕开了权限问题：
 
 ```
-国内机器  ssh -R 127.0.0.1:10080:127.0.0.1:10080 <用户>@<海外IP>
-                      │
+国内机器  ssh -R 127.0.0.1:10080:127.0.0.1:8649 <用户>@<海外IP>
+                      │        ▲                      ▲
+                      │        │                      └ 国内：seo_server.py 的默认端口
+                      │        └ 海外：SEO_URL 指的就是它
                       └─▶ 海外机器上出现一个 127.0.0.1:10080，连它就等于连国内的服务
 ```
+
+两头端口不一样是故意的。**走隧道之后安全组不参与了，端口想用哪个用哪个**，
+所以国内这头干脆用 `seo_server.py` 自己的默认值 8649——国内永远是
+`python seo_server.py` 裸跑，不用记 `SEO_PORT=`。海外那头固定 10080，
+`SEO_URL` 一个字不用改。
 
 需要的权限只有**海外机器的 22 入方向**，那台是你自己的。额外的好处是这一跳变成
 SSH 加密的了——直连方案里 `SEO_TOKEN` 是明文走公网的。
 
 装法见 [deploy/seo-tunnel.service](deploy/seo-tunnel.service)，文件头上写了完整步骤。
-四个容易踩的点先说在这里，前三个的报错都指向错误的方向：
+四个容易踩的点先说在这里，报错都指向错误的方向：
 
 - **密钥别留在 root 名下。** `sudo ssh-keygen` 生成出来是 `root:root`，而隧道是以普通
   用户跑的，读不到就报 `Load key ...: Permission denied`，紧接着因为没钥匙可用而变成
   `Permission denied (publickey)`——看着像公钥没加对，其实是本地文件权限。
   生成完 `sudo chown <跑隧道的用户>:<同左> /etc/seo-video-highlight/tunnel_key*`。
-- **监听地址要写全。** 必须是 `-R 127.0.0.1:10080:127.0.0.1:10080`，不能简写成
-  `-R 10080:...`。简写时 ssh 发过去的 bind address 是空的，和 `authorized_keys` 里的
-  `permitlisten="127.0.0.1:10080"` 字面匹配不上，sshd 会拒绝转发，报错只有一句
-  `Permission denied (open failed)`。
+- **监听地址要写全。** 必须是 `-R 127.0.0.1:10080:...`，不能简写成 `-R 10080:...`。
+  简写时 ssh 发过去的 bind address 是空的，和 `authorized_keys` 里的
+  `permitlisten="127.0.0.1:10080"` 字面匹配不上，sshd 会拒绝转发，报
+  `Warning: remote port forwarding failed for listen port 10080`。
 - **host key 是按用户存的。** 先用**跑隧道的那个用户**手动 ssh 一次收 host key。
   用 sudo 试的话收进的是 root 的 `known_hosts`，unit 照样 `Host key verification failed`。
 - **`ExitOnForwardFailure=yes` 不能省。** 缺了它，端口没挂上时 ssh 会「连上了但没转发」
@@ -255,9 +271,9 @@ sudo systemctl enable --now clip-api web
    没开鉴权的服务端会直接忽略这个头）。
 2. 再把同一个值写进**国内**的配置（Nacos 的 `seo_token`，或者 `seo_server.py` 进程的
    `SEO_TOKEN` 环境变量）。
-3. 最后用 `SEO_PORT=10080` 重启国内那个服务。启动日志里会打一行
+3. 最后重启国内那个服务（`python seo_server.py`，不带环境变量）。启动日志里会打一行
    `接口鉴权已开启，调用方需要带上 Authorization: Bearer <SEO_TOKEN>`，
-   没看到这行就是没读到配置，这时候 10080 是裸着对公网开的，赶紧停掉。
+   没看到这行就是没读到配置，这时候 8649 是裸着对公网开的，赶紧停掉。
 4. 回到**海外机器**跑 `npm run check:seo`，三步全绿才算通。
 
 第 4 步必须在海外机器上跑，不能在国内那台上自测：那台机器连自己的 EIP 是不通的
@@ -282,11 +298,12 @@ sudo systemctl enable --now clip-api web
 | --- | --- |
 | `SyntaxError: Unexpected token '?'` | node 太旧（< 20.19）。见上面「装 node」，注意 conda 会挡住新装的 node |
 | 请求**超时** | 包被丢了，没到机器。直连的话是安全组没放通；走隧道的话是隧道断了，到国内 `systemctl status seo-tunnel` |
-| 请求**被拒绝**（connection refused） | 包到了但没人监听。国内的服务没起，或者起在别的端口（要 `SEO_PORT=10080`） |
+| 请求**被拒绝**（connection refused） | 包到了但没人监听。隧道断了，或者国内的服务没起 |
+| 隧道里刷 `connect_to 127.0.0.1 port 10080: failed` | 隧道是好的，是国内这头转发不过去——`seo_server.py` 没在跑，或者监听的端口和 `-R` 最后那个数字对不上。`ss -tlnp \| grep 8649` 查一下 |
 | 隧道 active 但请求全被拒绝 | unit 里漏了 `ExitOnForwardFailure=yes`，ssh 连上了却没挂上端口 |
 | `Load key ...: Permission denied` | 密钥还是 root 的。`sudo chown <跑隧道的用户>: /etc/seo-video-highlight/tunnel_key*` |
 | `Permission denied (publickey)` | 先排除上一行（读不到密钥会连带报这个）。密钥能读了还报，才是公钥没加进海外机器的 `authorized_keys` |
-| `Permission denied (open failed)` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:10080`，否则和 `permitlisten` 匹配不上 |
+| `Permission denied (open failed)` / `remote port forwarding failed` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:8649`，否则和 `permitlisten` 匹配不上 |
 | `Host key verification failed` | host key 收进了别的用户的 `known_hosts`。用跑隧道的那个用户再手动 ssh 一次 |
 | 前端报「剪辑服务拒绝了请求」 | 两边 `SEO_TOKEN` 不一致，或者一边配了一边没配。这个错误不会重试，看日志里括号里那句提示 |
 | 提交任务后卡在上传 | `OSS_*` 没设齐，或者 `OSS_ENDPOINT` 用成了 `-internal` 的内网接入点。跑 `npm run check:oss` |

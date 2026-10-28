@@ -58,17 +58,24 @@ Type=simple
 User=xieshiji
 Environment=TUNNEL_KEY=/etc/seo-video-highlight/tunnel_key
 Environment=REMOTE=ubuntu@34.214.4.115
-Environment=PORT=10080
+# 海外那头挂的端口（SEO_URL 指的就是它）。和 permitlisten 里写的必须一致。
+Environment=REMOTE_PORT=10080
+# 国内这头 seo_server.py 实际监听的端口。就用它自己的默认值 8649，
+# 这样国内永远是 `python seo_server.py` 裸跑，不用记任何环境变量。
+# 走隧道之后端口是什么已经无所谓了——安全组不参与，两头由这个 -R 对上就行。
+# （踩过一次：有人重启服务时忘了带 SEO_PORT=10080，隧道照常挂着，
+#   表现是 `connect_to 127.0.0.1 port 10080: failed`。）
+Environment=LOCAL_PORT=8649
 
 # -N            不执行远程命令，只做转发
 # -T            不分配 tty
-# -R 127.0.0.1:PORT:127.0.0.1:PORT
-#               把海外机器的 127.0.0.1:PORT 转到本机的 127.0.0.1:PORT。
+# -R 127.0.0.1:REMOTE_PORT:127.0.0.1:LOCAL_PORT
+#               把海外机器的 127.0.0.1:REMOTE_PORT 转到本机的 127.0.0.1:LOCAL_PORT。
 #               ⚠ 监听地址 127.0.0.1 要**显式写出来**，不能简写成 -R PORT:...。
 #               简写的话 ssh 发给对端的 bind address 是空的，而 authorized_keys 里的
 #               permitlisten="127.0.0.1:10080" 是按请求的地址字面匹配的，空地址
-#               匹配不上，sshd 直接拒绝转发。报错只有一句
-#               "Permission denied (open failed)"，很难联想到是写法问题。
+#               匹配不上，sshd 直接拒绝转发，报错是
+#               `Warning: remote port forwarding failed for listen port 10080`。
 #               写全了之后 GatewayPorts 还是 no，对端依然只绑 127.0.0.1，不对公网开放。
 # ExitOnForwardFailure=yes
 #               端口没挂上就直接退出，让 systemd 重启重来。缺了这个的话
@@ -84,7 +91,7 @@ ExecStart=/usr/bin/ssh -N -T \
     -o StrictHostKeyChecking=yes \
     -o IdentitiesOnly=yes \
     -o BatchMode=yes \
-    -R 127.0.0.1:${PORT}:127.0.0.1:${PORT} \
+    -R 127.0.0.1:${REMOTE_PORT}:127.0.0.1:${LOCAL_PORT} \
     ${REMOTE}
 
 # 断了就重连。RestartSec 别设太小：海外机器重启时 sshd 还没起来，
