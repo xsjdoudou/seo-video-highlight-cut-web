@@ -153,6 +153,17 @@ def to_public_endpoint(endpoint: str) -> tuple[str, bool]:
     return endpoint, False
 
 
+def with_scheme(endpoint: str) -> tuple[str, bool]:
+    """补上 https://，返回 (endpoint, 补过没有)。
+
+    Nacos 里存的是裸域名。oss2 看到没有协议头会自己补 http://，于是凭证和
+    视频就明文上传了——不报错，也不会有任何提示，所以这里必须显式补成 https。
+    """
+    if "://" in endpoint:
+        return endpoint, False
+    return "https://" + endpoint, True
+
+
 def env_line(key: str, value: str) -> str:
     if _PLAIN_VALUE.match(value):
         return f"{key}={value}"
@@ -209,11 +220,17 @@ def main() -> None:
     if args.export_env:
         config = load_oss_config()
         endpoint, swapped = to_public_endpoint(config["endpoint"])
+        endpoint, schemed = with_scheme(endpoint)
 
         # 提示都走 stderr，stdout 保持干净，可以直接 >> .env 或者管道过去。
         if swapped:
             print(
                 f"[oss_upload] endpoint 换成公网接入点：{config['endpoint']} → {endpoint}",
+                file=sys.stderr,
+            )
+        if schemed:
+            print(
+                "[oss_upload] endpoint 补上 https://（裸域名会让 oss2 回落到 http，明文上传）",
                 file=sys.stderr,
             )
         print(
