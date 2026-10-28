@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -135,6 +136,33 @@ def load_oss_config() -> dict[str, str]:
         ) from exc
 
 
+PUBLIC_ENDPOINT_MARK = "-internal.aliyuncs.com"
+
+# 能直接裸写进 .env / systemd EnvironmentFile 的字符。AK/SK/域名都在这个集合里。
+_PLAIN_VALUE = re.compile(r"^[A-Za-z0-9_@%+=:,./-]*$")
+
+
+def to_public_endpoint(endpoint: str) -> tuple[str, bool]:
+    """把 -internal 的内网接入点换成公网的，返回 (endpoint, 换过没有)。
+
+    Nacos 里存的是 oss-cn-*-internal.aliyuncs.com，只在阿里云 VPC 内部可达。
+    海外机器照抄过去的话每次上传都卡到超时，而且报错看不出是接入点的问题。
+    """
+    if PUBLIC_ENDPOINT_MARK in endpoint:
+        return endpoint.replace(PUBLIC_ENDPOINT_MARK, ".aliyuncs.com"), True
+    return endpoint, False
+
+
+def env_line(key: str, value: str) -> str:
+    if _PLAIN_VALUE.match(value):
+        return f"{key}={value}"
+    if "'" in value:
+        # 单引号得转义，而 .env、systemd EnvironmentFile、with-env.mjs 三家的
+        # 转义规则不一样，写出来多半有一家读错。与其猜，不如直说。
+        raise SystemExit(f"{key} 的值里有单引号，没法安全导出，请手动设置这一项")
+    return f"{key}='{value}'"
+
+
 def object_name(prefix: str, source: Path) -> str:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     suffix = source.suffix.lower() or ".mp4"
@@ -171,7 +199,43 @@ def main() -> None:
         action="store_true",
         help="只检查凭证读不读得到就退出，部署新机器时先跑这个",
     )
+    parser.add_argument(
+        "--export-env",
+        action="store_true",
+        help="把解析出来的凭证按 KEY=value 打到 stdout，用来灌给连不上 Nacos 的机器",
+    )
     args = parser.parse_args()
+
+    if args.export_env:
+        config = load_oss_config()
+        endpoint, swapped = to_public_endpoint(config["endpoint"])
+
+        # 提示都走 stderr，stdout 保持干净，可以直接 >> .env 或者管道过去。
+        if swapped:
+            print(
+                f"[oss_upload] endpoint 换成公网接入点：{config['endpoint']} → {endpoint}",
+                file=sys.stderr,
+            )
+        print(
+            "[oss_upload] stdout 里是明文凭证。别贴进聊天 / issue / 日志，"
+            "落盘后 chmod 600。",
+            file=sys.stderr,
+        )
+
+        print(
+            "\n".join(
+                [
+                    "# 由 scripts/oss_upload.py --export-env 生成",
+                    env_line("OSS_AK", config["ak"]),
+                    env_line("OSS_SK", config["sk"]),
+                    env_line("OSS_ENDPOINT", endpoint),
+                    env_line("OSS_BUCKET", config["bucket"]),
+                    env_line("OSS_CDN_URL", config["cdn"]),
+                    env_line("OSS_TMP_DIR", config["tmp_dir"]),
+                ]
+            )
+        )
+        return
 
     if args.check:
         config = load_oss_config()

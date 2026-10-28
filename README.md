@@ -249,6 +249,31 @@ npm run check:oss        # OSS 凭证来源 / endpoint / bucket
 `check:oss` 打印的**来源必须是「环境变量」**，如果显示走了 Nacos 说明 `OSS_*` 没设齐，
 那条路在海外机器上早晚会断。
 
+### OSS 凭证怎么灌到海外机器
+
+海外机器连不上内网 Nacos，`OSS_*` 只能手工设。别手抄、更别贴进聊天或者 issue——
+让国内那台直接把值推过去：
+
+```bash
+# 在国内那台上跑（它能读到 Nacos）
+cd /datadisk1/xieshiji/code/seo-video-highlight-cut-web
+python3 scripts/oss_upload.py --export-env | ssh <用户>@<海外IP> \
+    'cat >> ~/code/seo-video-highlight-cut-web/.env && chmod 600 ~/code/seo-video-highlight-cut-web/.env'
+```
+
+`--export-env` 只往 stdout 打 `KEY=value`，提示走 stderr，所以可以直接管道。
+它会顺手把 `OSS_ENDPOINT` 里的 `-internal` 去掉换成公网接入点——Nacos 里存的是
+`oss-cn-*-internal.aliyuncs.com`，只在阿里云 VPC 内部可达，海外机器照抄过去
+每次上传都会卡到超时，而且报错看不出是接入点的问题。
+
+> 这条管道里走的是明文 AK/SK。用的是你自己登录海外机器那把钥匙（不是隧道那把，
+> 那把加了 `restrict`，跑不了命令）。推完在海外机器上 `npm run check:oss` 验，
+> 来源要显示「环境变量」。
+
+追加就行，不用先删旧的：同一个文件里重复的键，**后面的覆盖前面的**，
+所以 `.env` 里原来那几行空的 `OSS_AK=` 会被追加的真值盖掉。
+（但命令行临时给的 `OSS_AK=xxx npm run dev` 仍然赢过整个文件。）
+
 systemd 那份配置文件要这样验：
 
 ```bash
