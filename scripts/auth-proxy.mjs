@@ -39,7 +39,11 @@ function authorized(header) {
 }
 
 const server = http.createServer((req, res) => {
-  if (!authorized(req.headers.authorization)) {
+  // The relay has its own high-entropy WORKER_TOKEN. Do not make the outbound
+  // worker depend on the browser's Basic Auth credentials; the clip-api still
+  // rejects every relay request without that token.
+  const isWorkerRelay = req.url?.startsWith('/api/worker/')
+  if (!isWorkerRelay && !authorized(req.headers.authorization)) {
     res.writeHead(401, {
       'WWW-Authenticate': `Basic realm="${REALM}", charset="UTF-8"`,
       'Content-Type': 'text/plain; charset=utf-8',

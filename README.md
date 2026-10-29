@@ -2,7 +2,63 @@
 
 高光剪辑站点的前端 + 一层薄薄的编排服务（`scripts/clip-api.mjs`）。
 
-## 它跑在哪儿
+## 当前生产架构
+
+生产环境使用 AWS 中继队列，不使用 AWS 到阿里云的入站连接，也不使用 SSH 反向隧道：
+
+```
+浏览器 -> AWS clip-api -> 持久化任务队列 <- HTTPS 长轮询 <- 阿里云 seo_worker.py
+                                  阿里云 Worker -> 127.0.0.1:10080 seo_server.py
+```
+
+AWS 只暴露网站和 Worker relay API。阿里云 Worker 由 `gg --noudp` 启动，主动向
+`AWS_RELAY_URL` 建立出站 HTTPS 连接，领取任务后调用本机 SEO 服务，并回传进度和结果。
+因此阿里云安全组不需要开放 `10080`，AWS 生产配置也不应设置 `SEO_URL`。
+
+### 生产部署
+
+AWS `/etc/seo-video-highlight/web.env` 至少设置：
+
+```text
+WORKER_TOKEN=<openssl rand -hex 32 生成的随机值>
+PUBLIC_BASE=https://video-highlight.com
+SOURCE_PUBLIC_BASE=https://video-highlight.com
+```
+
+阿里云 `/etc/seo-video-highlight/worker.env` 设置同一个 `WORKER_TOKEN`：
+
+```text
+AWS_RELAY_URL=https://video-highlight.com
+WORKER_TOKEN=<与 AWS 完全相同>
+WORKER_ID=aliyun-gpu-1
+LOCAL_SEO_URL=http://127.0.0.1:10080/v1/seo
+SEO_TOKEN=<与 seo_server.py 相同；若本机服务未启用鉴权可留空>
+```
+
+模板位于阿里云仓库的 `deploy/worker.env.example`，复制后填写真实令牌并执行
+`chmod 600 /etc/seo-video-highlight/worker.env`。
+
+两台机器分别安装 unit 后启动：
+
+```bash
+# AWS
+sudo systemctl daemon-reload
+sudo systemctl enable --now clip-api
+
+# 阿里云
+sudo systemctl daemon-reload
+sudo systemctl disable --now seo-tunnel 2>/dev/null || true
+sudo systemctl enable --now seo-server seo-worker
+sudo journalctl -u seo-worker -f
+```
+
+Worker 正常时日志会出现 `claimed job=...`；网站提交任务后，AWS 的 `clip-api` 日志会
+出现入队记录，随后 Worker 日志会出现领取和完成记录。AWS 重启不会丢失队列，Worker
+租约过期后未完成的任务会自动重新入队。
+
+下面的旧「SSH 反向隧道」章节只保留作历史排障参考，不能作为生产部署步骤。
+
+## 旧架构参考（不用于生产）
 
 ```
   海外机器                                     国内 GPU 机器
@@ -213,7 +269,7 @@ dev 模式是**一个进程**：vite 和 clip-api 在一起。
 | 编排服务 | `npm run clip-api`（:10051） | **要** |
 | 访问口令代理 | `npm run auth-proxy`（:10060） | 不要 |
 
-## 部署到海外机器
+## AWS 部署细节
 
 ```bash
 # 依赖
@@ -227,22 +283,22 @@ npm run build
 
 sudo mkdir -p /etc/seo-video-highlight
 sudo cp .env.example /etc/seo-video-highlight/web.env
-sudo vi   /etc/seo-video-highlight/web.env   # 填 SEO_URL / SEO_TOKEN / PUBLIC_BASE / SOURCE_PUBLIC_BASE
+sudo vi   /etc/seo-video-highlight/web.env   # 填 WORKER_TOKEN / PUBLIC_BASE / SOURCE_PUBLIC_BASE
 sudo chmod 600 /etc/seo-video-highlight/web.env
 ```
 
 抄 `.env.example` 过去时注意 systemd 的 `EnvironmentFile` 语法比 shell 严：不要写
 `export`，也不要在值后面跟 ` # 注释`。整行注释没问题。
 
-先验凭证和链路，再起服务——这两步能把大部分部署问题挡在前面：
+生产模式不再运行 `npm run check:seo`：它检查的是旧的 AWS 直连 SEO_URL。部署后用
+下面的 Worker relay 检查代替：
 
 ```bash
-npm run check:seo        # SEO_URL 格式 → 连通性 → 令牌，三步分开报
+curl -i -H "Authorization: Bearer $WORKER_TOKEN" \
+  "https://video-highlight.com/api/worker/jobs/next?wait=1"
 ```
 
-`check:seo` 全程不打印令牌，只说它好不好使。它第三步是 GET 一个随机的 `task_id`：
-拿到 `404 task not found` 说明令牌已经被服务端认了（这个 id 本来就不存在），
-拿到 `401` 就是令牌不对。整个过程不创建任务，也不占 GPU。
+空队列应返回 `200` 和 `{"job":null}`；返回 `401` 表示 `WORKER_TOKEN` 不一致。
 
 ### OSS 凭证放在阿里云后端
 
@@ -252,48 +308,28 @@ npm run check:seo        # SEO_URL 格式 → 连通性 → 令牌，三步分�
 后端从 Nacos 读取时无需在海外机器导出这些变量；如果后端改为环境变量配置，直接写入
 阿里云 `seo-server.service` 的环境文件即可，不要写入海外前端的 `.env`。
 
-systemd 那份配置文件要这样验：
+systemd 的 env 文件只放在服务器上并设为 `600`；不要把令牌放进仓库或命令行。
 
-```bash
-ENV_FILE=/etc/seo-video-highlight/web.env npm run check:seo
-```
-
-然后起服务：
+然后起 AWS 服务（不要启用 `seo-tunnel`）：
 
 ```bash
 sudo cp deploy/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now clip-api web
+sudo systemctl disable --now seo-tunnel 2>/dev/null || true
 ```
 
-### 开鉴权的顺序
+### Worker 和 SEO 鉴权
 
-两边配置有先后，搞反了站点会在中间那段时间全挂：
+两组令牌分别配置，不能混用：
 
-1. 先在**海外机器**上设好 `SEO_TOKEN`（这时国内还没开鉴权，带着令牌发请求也无所谓，
-   没开鉴权的服务端会直接忽略这个头）。
-2. 再把同一个值写进**国内**的配置（Nacos 的 `seo_token`，或者 `seo_server.py` 进程的
-   `SEO_TOKEN` 环境变量）。
-3. 最后重启国内那个服务（`python seo_server.py`，不带环境变量）。启动日志里会打一行
-   `接口鉴权已开启，调用方需要带上 Authorization: Bearer <SEO_TOKEN>`，
-   没看到这行就是没读到配置，这时候 8649 是裸着对公网开的，赶紧停掉。
-4. 回到**海外机器**跑 `npm run check:seo`，三步全绿才算通。
+1. AWS 和阿里云 `/etc/seo-video-highlight/worker.env` 使用同一个 `WORKER_TOKEN`。
+2. 阿里云 `seo_server.py` 的 `SEO_TOKEN` 与 Worker 的 `SEO_TOKEN` 使用同一个值。
+3. 阿里云启动 `seo-server` 后确认本机 `curl http://127.0.0.1:10080/health_check` 返回 200。
+4. 启动 `seo-worker`，确认日志出现 `claimed job=...`。
 
-第 4 步必须在海外机器上跑，不能在国内那台上自测：那台机器连自己的 EIP 是不通的
-（`101.132.167.193:22` 从本机都连不上，hairpin NAT 没开），所以在国内怎么试都看不出
-跨境那一跳到底通没通。
-
-令牌用 `openssl rand -hex 32` 生成。**不要**把生成的值贴进聊天记录、issue 或者任何
-会留档的地方——贴过就等于泄漏，重新生成一个。两边核对是不是同一个值的时候也别互相贴明文，
-各自 `printf %s "$SEO_TOKEN" | sha256sum` 比对前 12 位就够了。
-
-> 走 SSH 反向隧道的话，跨境这一跳已经是 SSH 加密的了，令牌不再明文过公网，
-> 这一段可以跳过。
->
-> 如果是直连 EIP，那一跳是明文 HTTP，令牌和视频地址在路上能被看到。想上 TLS 的话，
-> Let's Encrypt 的自动签发需要 80（HTTP-01）或 443（TLS-ALPN-01），只开 10080 签不下来——
-> 要么安全组再放通 443 挂个 caddy/nginx，要么用 DNS-01 校验（任何端口都行，但要配 DNS 厂商凭证）。
-> 既然安全组本来就改不动，隧道反而是这里成本最低的那条路。
+令牌用 `openssl rand -hex 32` 生成。不要把明文令牌写进仓库、聊天记录或 unit 文件；
+systemd 的 env 文件权限设为 `600`。
 
 ## 排查
 

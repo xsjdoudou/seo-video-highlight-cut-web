@@ -26,9 +26,9 @@
 //   PUBLIC_BASE     给浏览器用的地址前缀      默认 http://127.0.0.1:10050（vite dev）
 //                   成片链接拿它拼。
 //   SOURCE_PUBLIC_BASE 阿里云下载源视频的地址前缀，默认跟 PUBLIC_BASE 一样
-//   SEO_URL         高光剪辑服务            默认 http://127.0.0.1:8649
+//   SEO_URL         旧 direct 模式地址      生产中不使用
 //   SEO_PATH        接口路径                默认 /v1/seo
-//   SEO_TOKEN       剪辑服务鉴权令牌        默认空（服务端也没配时才可以留空）
+//   SEO_TOKEN       旧 direct 模式令牌      生产中由阿里云 Worker 使用
 //   SEO_POLL_INTERVAL_MS   轮询间隔         默认 5000
 //   SEO_REQUEST_TIMEOUT_MS 单次请求超时     默认 30000
 //   SEO_TASK_TIMEOUT_MS    整个任务的上限   默认 2 小时
@@ -62,6 +62,15 @@ import {
   upsertUser,
 } from './store.mjs'
 import { env } from './env.mjs'
+import {
+  applyWorkerEvent,
+  claimNextJob,
+  createRelayJob,
+  finalizeRelayJob,
+  getRelayJob,
+  initializeRelay,
+  waitForWork,
+} from './relay-store.mjs'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -70,10 +79,12 @@ const CLIP_API_PORT = Number(env('CLIP_API_PORT', 10051))
 const PUBLIC_BASE = String(env('PUBLIC_BASE', 'http://127.0.0.1:10050')).replace(/\/+$/, '')
 // 这个地址必须能被阿里云直接 GET，不能只是浏览器能访问的 localhost 或 Basic Auth 页面。
 const SOURCE_PUBLIC_BASE = String(env('SOURCE_PUBLIC_BASE', PUBLIC_BASE)).replace(/\/+$/, '')
+// Production traffic goes through the worker relay. SEO_URL is retained only for
+// old local code below; the public AWS process never connects to the GPU host.
 const SEO_URL = String(env('SEO_URL', 'http://127.0.0.1:8649')).replace(/\/+$/, '')
 const SEO_PATH = env('SEO_PATH', '/v1/seo')
-// 剪辑服务的访问令牌。两边都留空只适合本机联调；跨境部署时 SEO_URL 指向公网，
-// 这里和服务端的 SEO_TOKEN 必须一起配上，否则等于把那台机器的 GPU 开放给所有人。
+// Legacy direct-mode token. Production requests carry the local SEO token only
+// from the Aliyun worker; AWS itself never sends this token to a GPU host.
 const SEO_TOKEN = env('SEO_TOKEN', '').trim()
 // 轮询参数。跨境链路上单次请求必须短，任务总时长才可以很长。
 const SEO_POLL_INTERVAL_MS = Number(env('SEO_POLL_INTERVAL_MS', 5000))
@@ -84,6 +95,8 @@ const SEO_POLL_MAX_ERRORS = Number(env('SEO_POLL_MAX_ERRORS', 10))
 const DESUB_URL = env('DESUB_URL', '')
 const DESUB_TOKEN = env('DESUB_TOKEN', '')
 const UPLOAD_DIR = path.resolve(env('UPLOAD_DIR', path.join(REPO_ROOT, '.uploads')))
+const WORKER_TOKEN = env('WORKER_TOKEN', '').trim()
+const WORKER_POLL_MAX_WAIT_MS = Math.min(30_000, Math.max(1_000, Number(env('WORKER_POLL_MAX_WAIT_MS', 25_000))))
 
 /** 上传文件保留多久，超过就在下次上传时顺手清掉。 */
 const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
@@ -127,8 +140,8 @@ function shortId(id) {
 
 /** 启动时把接到哪些下游、文件落在哪打一遍，省得猜配置有没有生效。 */
 function printBanner() {
-  log(`下游剪辑服务: ${SEO_URL}${SEO_PATH}（服务端内部腾讯云 ASR）`)
-  log(`剪辑服务鉴权: ${SEO_TOKEN ? '已配置 SEO_TOKEN' : '(未配置，只适合本机联调)'}`)
+  log(`任务中继:      ${WORKER_TOKEN ? '已启用 Worker 长轮询' : '未配置 WORKER_TOKEN，Worker API 不可用'}`)
+  log(`下游剪辑服务:  由阿里云 Worker 访问本机服务（AWS 不直连 SEO_URL）`)
   log(`去字幕服务:   ${DESUB_URL || '(未接入，开关打开也会跳过)'}`)
   log(`下载地址前缀: ${PUBLIC_BASE}`)
   log(`源视频地址前缀: ${SOURCE_PUBLIC_BASE}`)
@@ -196,6 +209,19 @@ function userFacingError(error, stage) {
 }
 
 const jobs = new Map()
+let relayReady = null
+const finalizingJobs = new Set()
+
+function ensureRelay() {
+  if (!relayReady) {
+    relayReady = initializeRelay().then((records) => {
+      for (const record of records) {
+        if (record.status === 'finalizing' && record.result) resumeFinalization(record)
+      }
+    })
+  }
+  return relayReady
+}
 
 // ---------------------------------------------------------------- HTTP 小工具
 
@@ -758,6 +784,8 @@ function clipProgress(job, seconds) {
   }
 }
 
+// Legacy direct-mode pipeline retained for local code archaeology. Production
+// jobs are finalized from worker events and never enter this function.
 async function runJob(job) {
   let clip = null
   const user = job.input.email ? await findUserByEmail(job.input.email) : null
@@ -856,56 +884,161 @@ async function recordAssets(job, user, highlights) {
   }
 }
 
-function createJob(input) {
-  pruneJobs()
-  const job = {
-    id: crypto.randomUUID(),
-    // 下游剪辑服务的任务 id，提交成功后回填，用来把两边的日志对起来。
-    taskId: '',
-    status: 'running',
-    stage: 'asr',
-    label: STAGES.asr.label,
-    progress: 0,
-    warnings: [],
-    highlights: [],
-    error: null,
-    input,
-    startedAt: Date.now(),
-    updatedAt: Date.now(),
+function relayRuntimeJob(record) {
+  return {
+    ...record,
+    id: record.jobId,
+    startedAt: record.startedAt || record.createdAt,
+    warnings: Array.isArray(record.warnings) ? record.warnings : [],
   }
-  jobs.set(job.id, job)
+}
+
+async function finalizeWorkerResult(record) {
+  if (!record?.result || finalizingJobs.has(record.jobId)) return
+  finalizingJobs.add(record.jobId)
+  const job = relayRuntimeJob(record)
+  const user = job.input.email ? await findUserByEmail(job.input.email) : null
+  try {
+    let highlights = Array.isArray(record.result.highlights) ? record.result.highlights : []
+    const segments = Array.isArray(record.result.segments) ? record.result.segments : []
+    if (job.input.addSubtitles) {
+      // The worker returns the raw OSS clip URLs. Subtitle burning remains on AWS
+      // so the browser still sees the same /uploads URL contract as before.
+      highlights = await burnSubtitles(highlights, segments, job.id, job.warnings)
+    }
+    await finalizeRelayJob(job.id, {
+      status: 'done',
+      label: 'Done',
+      progress: 100,
+      highlights,
+      warnings: job.warnings,
+      result: null,
+      leaseId: '',
+      leaseUntil: 0,
+    })
+    const seconds = Math.round((Date.now() - job.startedAt) / 1000)
+    log(`${shortId(job.id)} ✓ 完成：${highlights.length} 个片段，耗时 ${seconds}s`)
+    for (const warning of job.warnings) log(`${shortId(job.id)}   注意：${warning}`)
+    await recordConsumption(job, user, 'done', creditsForSeconds(job.input.duration), highlights.length, '')
+    await recordAssets(job, user, highlights)
+  } catch (error) {
+    const detail = error instanceof ApiError ? error.message : String(error?.message || error)
+    await finalizeRelayJob(job.id, {
+      status: 'error',
+      label: 'Something went wrong',
+      error: userFacingError(error, job.stage),
+      progress: Math.min(99, Number(job.progress) || 0),
+      result: null,
+      leaseId: '',
+      leaseUntil: 0,
+    })
+    log(`${shortId(job.id)} ✗ 失败于 ${job.stage}：${detail}`)
+    await recordConsumption(job, user, 'error', 0, 0, detail)
+  } finally {
+    finalizingJobs.delete(job.id)
+  }
+}
+
+function resumeFinalization(record) {
+  finalizeWorkerResult(record).catch((error) => {
+    console.error('[clip-api] 恢复中继任务失败：', error)
+  })
+}
+
+async function createJob(input) {
+  const job = await createRelayJob(input)
   const options = [
     input.duration ? `${Math.round(input.duration)}s` : '时长未知',
     input.removeSubtitles ? '去字幕' : null,
     input.addSubtitles ? '压字幕' : null,
   ].filter(Boolean)
-  log(`${shortId(job.id)} 新任务 ${input.email || '(未登录)'} ${options.join(' · ')}`)
-  log(`${shortId(job.id)}   源：${input.videoUrl}`)
-  // 不 await：接口立刻返回 jobId，前端轮询。
-  runJob(job)
+  log(`${shortId(job.jobId)} 新任务 ${input.email || '(未登录)'} ${options.join(' · ')}`)
+  log(`${shortId(job.jobId)}   源：${input.videoUrl}`)
+  // Worker 会通过出站长轮询领取任务，接口本身只负责入队。
   return job
 }
 
+function workerTokenFromRequest(req) {
+  const header = String(req.headers['x-worker-token'] || '').trim()
+  if (header) return header
+  const authorization = String(req.headers.authorization || '').trim()
+  if (authorization.toLowerCase().startsWith('bearer ')) return authorization.slice(7).trim()
+  return authorization
+}
+
+function workerAuthorized(req) {
+  if (!WORKER_TOKEN) return false
+  const supplied = workerTokenFromRequest(req)
+  const expected = Buffer.from(WORKER_TOKEN)
+  const actual = Buffer.from(supplied)
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
+}
+
+function requireWorker(req) {
+  if (!WORKER_TOKEN) throw new ApiError('Worker relay is not configured.', 503)
+  if (!workerAuthorized(req)) throw new ApiError('Unauthorized worker.', 401)
+}
+
+async function handleWorkerNext(req, res, url) {
+  requireWorker(req)
+  const waitMs = Math.min(WORKER_POLL_MAX_WAIT_MS, Math.max(0, Number(url.searchParams.get('wait') || 0) * 1000))
+  const workerId = String(req.headers['x-worker-id'] || '').trim()
+  let job = await claimNextJob(workerId)
+  if (!job && waitMs > 0) {
+    await waitForWork(waitMs)
+    job = await claimNextJob(workerId)
+  }
+  sendJson(res, 200, { job: job || null, retryAfterMs: job ? 0 : 1000 })
+}
+
+async function recordWorkerFailure(record, detail) {
+  if (!record) return
+  const user = record.input?.email ? await findUserByEmail(record.input.email) : null
+  await recordConsumption(relayRuntimeJob(record), user, 'error', 0, 0, detail)
+}
+
+async function handleWorkerEvent(req, res, jobId) {
+  requireWorker(req)
+  const body = await readJsonBody(req, 512 * 1024)
+  const type = String(body.type || body.event || '').trim()
+  if (!['started', 'progress', 'completed', 'failed'].includes(type)) {
+    throw new ApiError('Unknown worker event.', 400)
+  }
+  const leaseId = String(body.leaseId || req.headers['x-worker-lease'] || '').trim()
+  if (!leaseId) throw new ApiError('Missing worker lease.', 400)
+  const result = await applyWorkerEvent(jobId, leaseId, { ...body, type })
+  if (!result.ok) throw new ApiError(result.code === 'not_found' ? 'Worker job not found.' : 'Worker lease expired.', result.code === 'not_found' ? 404 : 409)
+
+  if (type === 'completed') {
+    resumeFinalization(result.job)
+  } else if (type === 'failed') {
+    recordWorkerFailure(result.job, result.job.error).catch((error) => console.error('[clip-api] 写 Worker 失败记录失败：', error))
+  }
+  sendJson(res, 202, { accepted: true, status: result.status })
+}
+
 function jobView(job) {
+  const status = job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : 'running'
   return {
-    jobId: job.id,
-    status: job.status,
-    stage: job.stage,
-    label: job.label,
-    progress: job.progress,
-    warnings: job.warnings,
-    highlights: job.status === 'done' ? job.highlights : [],
-    error: job.error,
+    jobId: job.jobId || job.id,
+    status,
+    stage: ['desub', 'asr', 'clip', 'subtitles'].includes(job.stage) ? job.stage : 'asr',
+    label: job.label || 'Processing your video…',
+    progress: Math.max(0, Math.min(100, Number(job.progress) || 0)),
+    warnings: Array.isArray(job.warnings) ? job.warnings : [],
+    highlights: status === 'done' ? job.highlights || [] : [],
+    error: status === 'error' ? job.error : null,
   }
 }
 
 async function handleCreateJob(req, res) {
+  if (!WORKER_TOKEN) throw new ApiError('Video processing is not configured yet. Please try again later.', 503)
   const body = await readJsonBody(req)
   const videoUrl = String(body.videoUrl ?? '').trim()
   if (!/^https?:\/\//.test(videoUrl)) {
     throw new ApiError("That video link doesn't look right. Use a direct http(s) link, or upload the file instead.")
   }
-  const job = createJob({
+  const job = await createJob({
     videoUrl,
     email: String(body.email ?? '').trim(),
     // 落盘后的 URL 认不出用户当初选的是哪个文件，账户页要显示来源就得前端带上。
@@ -981,11 +1114,19 @@ export function createClipApi() {
     const pathname = decodeURIComponent(url.pathname)
 
     const handle = async () => {
+      await ensureRelay()
       if (pathname === '/api/upload' && req.method === 'POST') {
         // Large uploads may legitimately take longer than Node's default request timeout.
         req.setTimeout?.(0)
         res.setTimeout?.(0)
         return handleUpload(req, res)
+      }
+      if (pathname === '/api/worker/jobs/next' && req.method === 'GET') {
+        return handleWorkerNext(req, res, url)
+      }
+      if (pathname.startsWith('/api/worker/jobs/') && pathname.endsWith('/events') && req.method === 'POST') {
+        const jobId = pathname.slice('/api/worker/jobs/'.length, -'/events'.length)
+        return handleWorkerEvent(req, res, jobId)
       }
       if (pathname === '/api/clip' && req.method === 'POST') return handleCreateJob(req, res)
       if (pathname === '/api/session' && req.method === 'POST') return handleSession(req, res)
@@ -993,7 +1134,7 @@ export function createClipApi() {
       if (pathname === '/api/assets' && req.method === 'GET') return handleAssets(req, res, url)
       if (pathname === '/api/topup' && req.method === 'POST') return handleTopup(req, res)
       if (pathname.startsWith('/api/clip/') && req.method === 'GET') {
-        const job = jobs.get(pathname.slice('/api/clip/'.length))
+        const job = await getRelayJob(pathname.slice('/api/clip/'.length))
         if (!job) throw new ApiError('This job has expired. Please run it again.', 404)
         return sendJson(res, 200, jobView(job))
       }

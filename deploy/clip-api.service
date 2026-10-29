@@ -5,7 +5,7 @@
 #   sudo cp deploy/clip-api.service /etc/systemd/system/
 #   sudo mkdir -p /etc/seo-video-highlight
 #   sudo cp .env.example /etc/seo-video-highlight/web.env
-#   sudo vi   /etc/seo-video-highlight/web.env     # 填 SEO_TOKEN / OSS_* / SEO_URL
+#   sudo vi   /etc/seo-video-highlight/web.env     # 填 WORKER_TOKEN / PUBLIC_BASE / SOURCE_PUBLIC_BASE
 #   sudo chown root:root /etc/seo-video-highlight/web.env
 #   sudo chmod 600       /etc/seo-video-highlight/web.env
 #   sudo systemctl daemon-reload
