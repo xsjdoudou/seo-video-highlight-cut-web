@@ -1,6 +1,6 @@
 // 把「Get clips in 1 click」接到真正的高光剪辑服务上。
 //
-// 浏览器拿不出服务端要的能被 Python 服务直接下载的文件，这一层负责上传和任务编排：
+// 浏览器拿不出服务端要的能被阿里云直接下载的文件，这一层负责上传和任务编排：
 //
 //   POST /api/upload        原始字节 + x-file-name 头，落盘，返回可下载的 URL
 //   GET  /uploads/<name>    把落盘的文件（和加好字幕的成片）发出去，支持 Range
@@ -13,7 +13,7 @@
 //
 // 用户、充值、消费、资产四份文件在 scripts/store.mjs。
 //
-// 后台流水线：去字幕（可选）→ 提交 /v1/seo 并轮询（服务端内部完成腾讯 ASR）→ 烧字幕（可选）。
+// 后台流水线：提交 /v1/seo 并轮询（服务端内部完成下载和腾讯 ASR）→ 烧字幕（可选）。
 //
 // 零依赖，只用 node 内置模块 + ffmpeg。
 //
@@ -24,10 +24,10 @@
 // 环境变量：
 //   CLIP_API_PORT   独立模式监听端口        默认 10051
 //   PUBLIC_BASE     给浏览器用的地址前缀      默认 http://127.0.0.1:10050（vite dev）
-//                   上传回执和成片链接拿它拼。
+//                   成片链接拿它拼。
+//   SOURCE_PUBLIC_BASE 阿里云下载源视频的地址前缀，默认跟 PUBLIC_BASE 一样
 //   SEO_URL         高光剪辑服务            默认 http://127.0.0.1:8649
 //   SEO_PATH        接口路径                默认 /v1/seo
-//   SOURCE_UPLOAD_URL  源视频直传地址       默认 ${SEO_URL}/v1/seo/upload
 //   SEO_TOKEN       剪辑服务鉴权令牌        默认空（服务端也没配时才可以留空）
 //   SEO_POLL_INTERVAL_MS   轮询间隔         默认 5000
 //   SEO_REQUEST_TIMEOUT_MS 单次请求超时     默认 30000
@@ -39,7 +39,7 @@
 //
 // 腾讯云 ASR 由 SEO 服务负责，需要在 SEO 服务进程中配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY。
 //
-// 源视频通过现有 SSH 反向隧道直传阿里云；成片仍由阿里云服务上传 OSS。
+// 本地上传先落在 AWS，再把可访问 URL 交给阿里云；YouTube/TikTok URL 直接交给阿里云。
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -68,9 +68,10 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const CLIP_API_PORT = Number(env('CLIP_API_PORT', 10051))
 // 留空等于没设，用默认值——.env 里 `PUBLIC_BASE=` 这一行不该把默认值废掉，见 env.mjs。
 const PUBLIC_BASE = String(env('PUBLIC_BASE', 'http://127.0.0.1:10050')).replace(/\/+$/, '')
+// 这个地址必须能被阿里云直接 GET，不能只是浏览器能访问的 localhost 或 Basic Auth 页面。
+const SOURCE_PUBLIC_BASE = String(env('SOURCE_PUBLIC_BASE', PUBLIC_BASE)).replace(/\/+$/, '')
 const SEO_URL = String(env('SEO_URL', 'http://127.0.0.1:8649')).replace(/\/+$/, '')
 const SEO_PATH = env('SEO_PATH', '/v1/seo')
-const SOURCE_UPLOAD_URL = String(env('SOURCE_UPLOAD_URL', `${SEO_URL}/v1/seo/upload`)).replace(/\/+$/, '')
 // 剪辑服务的访问令牌。两边都留空只适合本机联调；跨境部署时 SEO_URL 指向公网，
 // 这里和服务端的 SEO_TOKEN 必须一起配上，否则等于把那台机器的 GPU 开放给所有人。
 const SEO_TOKEN = env('SEO_TOKEN', '').trim()
@@ -130,6 +131,7 @@ function printBanner() {
   log(`剪辑服务鉴权: ${SEO_TOKEN ? '已配置 SEO_TOKEN' : '(未配置，只适合本机联调)'}`)
   log(`去字幕服务:   ${DESUB_URL || '(未接入，开关打开也会跳过)'}`)
   log(`下载地址前缀: ${PUBLIC_BASE}`)
+  log(`源视频地址前缀: ${SOURCE_PUBLIC_BASE}`)
   log(`落盘目录:     ${UPLOAD_DIR}`)
   const store = describeStore()
   log(`用户档案:     ${store.users}`)
@@ -412,7 +414,7 @@ async function handleUpload(req, res) {
     throw new ApiError('That upload came through empty. Please pick the file again.')
   }
   log(`上传完成 ${name}（${mb(stat.size)}）`)
-  sendJson(res, 200, { name, bytes: stat.size, url: `${PUBLIC_BASE}/uploads/${name}` })
+  sendJson(res, 200, { name, bytes: stat.size, url: `${SOURCE_PUBLIC_BASE}/uploads/${name}` })
 }
 
 /** 发静态文件，带 Range：下游服务只用整段下载，但浏览器播放成片需要它。 */
@@ -475,87 +477,6 @@ async function runDesub(videoUrl) {
   return next
 }
 
-/** 下载地址是我们自己发出去的那批文件时，换回本地路径。 */
-function localPathForUrl(videoUrl) {
-  const prefix = `${PUBLIC_BASE}/uploads/`
-  if (!videoUrl.startsWith(prefix)) return null
-  const name = path.basename(decodeURIComponent(videoUrl.slice(prefix.length)))
-  const file = path.join(UPLOAD_DIR, name)
-  return fs.existsSync(file) ? file : null
-}
-
-/**
- * 保证手上有一份本地文件：页面上传的本来就在 .uploads 里，贴链接的先下下来。
- * 返回的 temporary 标记用来决定事后要不要删——下载来的是临时的，上传的不动。
- */
-async function materializeSource(videoUrl) {
-  const existing = localPathForUrl(videoUrl)
-  if (existing) return { file: existing, temporary: false }
-
-  await fsp.mkdir(UPLOAD_DIR, { recursive: true })
-  const ext = path.extname(new URL(videoUrl).pathname).toLowerCase()
-  const file = path.join(UPLOAD_DIR, `src-${crypto.randomUUID()}${VIDEO_EXTENSIONS.has(ext) ? ext : '.mp4'}`)
-  await downloadToFile(videoUrl, file)
-  return { file, temporary: true }
-}
-
-/** Stream the source file through the existing SSH tunnel; do not buffer it or upload it to OSS. */
-function uploadSourceToBackend(file, onProgress) {
-  return new Promise((resolve, reject) => {
-    let stat
-    try {
-      stat = fs.statSync(file)
-    } catch (error) {
-      reject(new ApiError(`读取源视频失败：${error.message}`, 502))
-      return
-    }
-
-    const target = new URL(SOURCE_UPLOAD_URL)
-    const transport = target.protocol === 'https:' ? https : http
-    const headers = {
-      Accept: 'application/json',
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': stat.size,
-      'X-File-Name': encodeURIComponent(path.basename(file)),
-    }
-    if (SEO_TOKEN) headers.Authorization = SEO_TOKEN.startsWith('Bearer ') ? SEO_TOKEN : `Bearer ${SEO_TOKEN}`
-
-    const request = transport.request(target, { method: 'POST', headers }, (response) => {
-      const chunks = []
-      response.on('data', (chunk) => chunks.push(chunk))
-      response.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8')
-        let payload = null
-        try {
-          payload = text ? JSON.parse(text) : null
-        } catch {
-          payload = null
-        }
-        const status = response.statusCode ?? 0
-        if (status < 200 || status >= 300) {
-          const detail = payload?.message || text.slice(0, 300) || '无响应体'
-          const error = new ApiError(`源视频直传失败：HTTP ${status}：${detail}`, 502)
-          error.upstreamStatus = status
-          reject(error)
-          return
-        }
-        const sourceId = payload?.data?.source_id
-        if (!sourceId) {
-          reject(new ApiError(`源视频直传响应缺少 source_id：${text.slice(0, 200)}`, 502))
-          return
-        }
-        resolve(sourceId)
-      })
-    })
-    request.setTimeout(0)
-    request.on('error', (error) => reject(new ApiError(`源视频直传失败：${error.message}`, 502)))
-    const stream = fs.createReadStream(file)
-    stream.on('error', (error) => request.destroy(error))
-    stream.on('data', (chunk) => onProgress?.(Math.min(1, stream.bytesRead / stat.size)))
-    stream.pipe(request)
-  })
-}
-
 /** `[url](url)` 是下游当前的返回格式，取括号里的那个。 */
 function unwrapUrl(value) {
   const text = String(value ?? '').trim()
@@ -566,7 +487,7 @@ function unwrapUrl(value) {
 /**
  * 提交高光剪辑任务，然后轮询到出结果。
  *
- * 剪辑服务接收 source_id，ASR 在服务端完成，前端不用再识别一次。
+ * 剪辑服务接收 video_url，下载、ASR 和剪辑都在阿里云完成。
  *
  * 这里以前是一个同步长请求：POST 出去，几分钟到几十分钟后才回来。两个服务同机
  * 跑没问题，一旦分处两地（前端在海外、GPU 留在国内），这种长时间不出流量的连接
@@ -588,12 +509,12 @@ function describeAuthFailure(error) {
   return new ApiError(`剪辑服务拒绝了请求（${hint}）：${error.message}`, 502)
 }
 
-async function runHighlightCut(sourceId, onProgress) {
+async function runHighlightCut(videoUrl, onProgress) {
   let submitted
   try {
     submitted = await requestJson(
       `${SEO_URL}${SEO_PATH}`,
-      { source_id: sourceId },
+      { video_url: videoUrl },
       { token: SEO_TOKEN, timeoutMs: SEO_REQUEST_TIMEOUT_MS },
     )
   } catch (error) {
@@ -839,26 +760,17 @@ function clipProgress(job, seconds) {
 
 async function runJob(job) {
   let clip = null
-  let source = null
   const user = job.input.email ? await findUserByEmail(job.input.email) : null
   try {
-    // 先在本地备一份：页面传上来的本来就在 .uploads 里，贴的链接要下下来。
+    // 本地上传在 /api/upload 时已经落到 AWS；外部 URL 不在 AWS 下载，统一交给阿里云。
     setStage(job, 'fetch', 0.3)
-    source = await materializeSource(job.input.videoUrl)
-
-    setStage(job, 'transfer', 0.3)
-    const sourceId = await uploadSourceToBackend(source.file, (ratio) => setStage(job, 'transfer', ratio))
-    log(`${shortId(job.id)}   源视频已直传阿里云（${sourceId}）`)
-    if (job.input.removeSubtitles) {
-      // 直传模式没有公网源 URL；现有去字幕接口只接受 video_url，先明确跳过。
-      job.warnings.push('Subtitle removal is not available for direct uploads yet, so that step was skipped.')
-    }
+    log(`${shortId(job.id)}   把源 URL 交给阿里云下载：${job.input.videoUrl}`)
 
     setStage(job, 'asr', 0.3)
     setStage(job, 'clip', 0)
     clip = clipProgress(job, job.input.duration)
     let lastStage = ''
-    const result = await runHighlightCut(sourceId, (status) => {
+    const result = await runHighlightCut(job.input.videoUrl, (status) => {
       if (status.task_id && status.task_id !== job.taskId) {
         job.taskId = status.task_id
         // 跨境排查全靠这个 id 把两边的日志对上。
@@ -903,9 +815,6 @@ async function runJob(job) {
     if (!(error instanceof ApiError)) console.error(error)
     // 失败不扣积分，但照样留一条记录，方便对着看是哪一步断的。
     await recordConsumption(job, user, 'error', 0, 0, detail)
-  } finally {
-    // 下载来的那份是临时的；页面上传的留着，重跑时还要用。
-    if (source?.temporary) await fsp.rm(source.file, { force: true }).catch(() => {})
   }
 }
 

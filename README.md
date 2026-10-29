@@ -12,7 +12,7 @@
 │ clip-api.mjs           │ ───────────────▶│                      │
 │                        │                 └──────────┬───────────┘
 └──────────┬─────────────┘                            │
-           │ ② 直传源视频                    ③ 上传成片到 OSS
+           │ ② 提交源视频 URL                 ③ 上传成片到 OSS
            ▼                                          ▼
         ┌────────────── 阿里云后端本地磁盘 ──────────────┐
         └──────────────────────────────────────────────────────┘
@@ -20,7 +20,8 @@
 
 国内那台是阿里云 ECS `i-uf659g4jleurwg5zoboz`（cn-shanghai），EIP `101.132.167.193`。
 
-源视频通过现有 SSH 反向隧道直传阿里云后端，不再经过 OSS；成片仍由阿里云后端上传 OSS。
+本地上传先落在 AWS，再把 AWS 的源视频 URL 交给阿里云；YouTube/TikTok URL 直接交给阿里云。
+阿里云服务通过 `gg yt-dlp` 下载社交平台视频，源视频和成片都由阿里云本地处理/上传 OSS。
 
 **① 这一跳现在走 SSH 反向隧道，不是直连 EIP。** 那台 ECS 的安全组入方向规则我们
 没有权限改，海外机器直连 `101.132.167.193:10080` 是超时（包被丢了）。但它的**出方向**
@@ -226,7 +227,7 @@ npm run build
 
 sudo mkdir -p /etc/seo-video-highlight
 sudo cp .env.example /etc/seo-video-highlight/web.env
-sudo vi   /etc/seo-video-highlight/web.env   # 填 SEO_URL / SOURCE_UPLOAD_URL / SEO_TOKEN / PUBLIC_BASE
+sudo vi   /etc/seo-video-highlight/web.env   # 填 SEO_URL / SEO_TOKEN / PUBLIC_BASE / SOURCE_PUBLIC_BASE
 sudo chmod 600 /etc/seo-video-highlight/web.env
 ```
 
@@ -308,8 +309,8 @@ sudo systemctl enable --now clip-api web
 | `Permission denied (open failed)` / `remote port forwarding failed` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:8649`，否则和 `permitlisten` 匹配不上 |
 | `Host key verification failed` | host key 收进了别的用户的 `known_hosts`。用跑隧道的那个用户再手动 ssh 一次 |
 | 前端报「剪辑服务拒绝了请求」 | 两边 `SEO_TOKEN` 不一致，或者一边配了一边没配。这个错误不会重试，看日志里括号里那句提示 |
-| 提交任务后卡在直传 | 检查 `SOURCE_UPLOAD_URL`、SSH 反向隧道，以及阿里云 `seo_server.py` 是否在监听 8649 |
+| 提交任务后卡在下载 | 检查阿里云 `seo_server.py` 是否通过 `gg` 启动，以及 `SOURCE_PUBLIC_BASE` 是否能被阿里云直接访问 |
 | `new URL()` 抛错 / `SEO_URL` 不生效 | `SEO_URL` 写成了裸 IP。必须带协议和端口：`http://127.0.0.1:10080` |
-| 剪辑服务拿不到源视频 | 检查阿里云 `/v1/seo/upload` 日志和 `runs/incoming` 目录，确认隧道没有中途断开 |
+| 剪辑服务拿不到源视频 | 本地上传检查 `SOURCE_PUBLIC_BASE` 的 URL 能否从阿里云 GET；YouTube/TikTok 检查阿里云服务是否通过 `gg` 启动 |
 | 页面上视频 404 / 下载不了 | `PUBLIC_BASE` 不对。它是给**浏览器**用的地址前缀，必须是终端用户能访问到的域名，和国内那台没关系 |
 | 字幕是方块 | 缺中文字体，`apt install fonts-noto-cjk` |
