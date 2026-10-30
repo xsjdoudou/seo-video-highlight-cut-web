@@ -1014,7 +1014,7 @@ button {
 /* ---------- Generated results page ---------- */
 
 .results-page {
-  width: min(1180px, 100%);
+  width: 100%;
   margin: 0 auto;
   padding: 34px 28px 96px;
 }
@@ -1187,7 +1187,7 @@ button {
 
 .results-page__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   /* 卡片高度现在跟着各自的视频比例走，别被同一行里最高的那张拉长。 */
   align-items: start;
   gap: 18px;
@@ -1454,7 +1454,7 @@ button {
 /* ---------- Account ---------- */
 
 .account {
-  width: min(1180px, 100%);
+  width: 100%;
   margin: 0 auto;
   padding: 34px 28px 96px;
 }
@@ -2040,7 +2040,7 @@ button {
 
   .results-page__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    /* 窄屏本来就没多少宽度，再减半就看不清了，这里恢复占满。 */
+    /* 窄屏改成两列，保证视频和卡片文字仍然可读。 */
     max-width: none;
   }
 
