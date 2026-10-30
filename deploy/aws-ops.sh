@@ -1,127 +1,60 @@
 #!/usr/bin/env bash
 
-# AWS 生产机常用命令脚本。
-# 用法：./deploy/aws-ops.sh 命令
+# 这是 AWS 命令清单。
+# 请复制需要的单条命令，不要直接执行整个文件。
 
-set -euo pipefail
+# 启动 web
+sudo systemctl enable --now web
 
-SOURCE_DIR="/home/ubuntu/code/seo-video-highlight-cut-web"
-DEPLOY_DIR="/srv/seo-video-highlight-cut-web"
+# 启动 clip-api
+sudo systemctl enable --now clip-api
 
-case "${1:-help}" in
-  # 启动 web
-  start-web)
-    sudo systemctl enable --now web
-    ;;
+# 启动全部 AWS 服务
+sudo systemctl daemon-reload
+sudo systemctl enable --now clip-api web nginx
 
-  # 启动 clip-api
-  start-api)
-    sudo systemctl enable --now clip-api
-    ;;
+# 重启 web
+sudo systemctl restart web
 
-  # 启动全部 AWS 服务
-  start-all)
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now clip-api web nginx
-    ;;
+# 重启 clip-api
+sudo systemctl restart clip-api
 
-  # 重启 web
-  restart-web)
-    sudo systemctl restart web
-    ;;
+# 重启全部 AWS 服务
+sudo systemctl daemon-reload
+sudo systemctl restart clip-api web nginx
 
-  # 重启 clip-api
-  restart-api)
-    sudo systemctl restart clip-api
-    ;;
+# 查看 web 日志
+sudo journalctl -u web -f -o cat
 
-  # 重启全部 AWS 服务
-  restart-all)
-    sudo systemctl daemon-reload
-    sudo systemctl restart clip-api web nginx
-    ;;
+# 查看 clip-api 日志
+sudo journalctl -u clip-api -f -o cat
 
-  # 查看 web 日志
-  logs-web)
-    sudo journalctl -u web -f -o cat
-    ;;
+# 查看 nginx 日志
+sudo journalctl -u nginx -f -o cat
 
-  # 查看 clip-api 日志
-  logs-api)
-    sudo journalctl -u clip-api -f -o cat
-    ;;
+# 查看全部 AWS 日志
+sudo journalctl -u clip-api -u web -u nginx -f -o cat
 
-  # 查看全部 AWS 日志
-  logs-all)
-    sudo journalctl -u clip-api -u web -u nginx -f -o cat
-    ;;
+# 查看服务状态
+sudo systemctl status clip-api web nginx --no-pager
 
-  # 查看服务状态
-  status)
-    sudo systemctl status clip-api web nginx --no-pager
-    ;;
+# 拉取最新代码
+cd /home/ubuntu/code/seo-video-highlight-cut-web
+git pull --ff-only
 
-  # 更新前端并重启 web
-  update-web)
-    cd "$SOURCE_DIR"
-    git pull --ff-only
-    npm run build
-    sudo rsync -a dist/ "$DEPLOY_DIR/dist/"
-    sudo systemctl restart web
-    ;;
+# 构建前端
+npm run build
 
-  # 只构建本地前端并发布，不拉取 Git 代码
-  build-web)
-    cd "$SOURCE_DIR"
-    npm run build
-    sudo rsync -a dist/ "$DEPLOY_DIR/dist/"
-    sudo systemctl restart web
-    ;;
+# 发布前端文件
+sudo rsync -a dist/ /srv/seo-video-highlight-cut-web/dist/
 
-  # 查看帮助
-  help|-h|--help)
-    cat <<'EOF'
-### 启动 web
-./deploy/aws-ops.sh start-web
+# 发布前端后重启 web
+sudo systemctl restart web
 
-### 启动 clip-api
-./deploy/aws-ops.sh start-api
+# 测试网站
+curl -I --connect-timeout 5 --max-time 10 https://video-highlight.com
 
-### 启动全部 AWS 服务
-./deploy/aws-ops.sh start-all
-
-### 重启 web
-./deploy/aws-ops.sh restart-web
-
-### 重启 clip-api
-./deploy/aws-ops.sh restart-api
-
-### 重启全部 AWS 服务
-./deploy/aws-ops.sh restart-all
-
-### 查看 web 日志
-./deploy/aws-ops.sh logs-web
-
-### 查看 clip-api 日志
-./deploy/aws-ops.sh logs-api
-
-### 查看全部 AWS 日志
-./deploy/aws-ops.sh logs-all
-
-### 查看服务状态
-./deploy/aws-ops.sh status
-
-### 更新前端并重启 web
-./deploy/aws-ops.sh update-web
-
-### 只构建并发布前端
-./deploy/aws-ops.sh build-web
-EOF
-    ;;
-
-  *)
-    echo "未知命令：$1"
-    echo "执行 ./deploy/aws-ops.sh help 查看命令"
-    exit 1
-    ;;
-esac
+# 测试 Worker 接口
+WORKER_TOKEN_VALUE=$(sudo awk -F= '$1=="WORKER_TOKEN"{print substr($0,index($0,"=")+1)}' /etc/seo-video-highlight/web.env)
+curl -i --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${WORKER_TOKEN_VALUE}" "https://video-highlight.com/api/worker/jobs/next?wait=1"
+unset WORKER_TOKEN_VALUE
