@@ -18,9 +18,21 @@ function Chevron() {
   )
 }
 
-export default function Navbar({ accountPath, onOpenAccount }: { accountPath: string; onOpenAccount: () => void }) {
-  const session = useSession()
-  const balance = useBalance()
+export default function Navbar({
+  accountPath,
+  onOpenAccount,
+  demoAccount = false,
+}: {
+  accountPath: string
+  onOpenAccount: () => void
+  demoAccount?: boolean
+}) {
+  const realSession = useSession()
+  const realBalance = useBalance()
+  const session = demoAccount
+    ? { name: 'Demo account', email: 'demo@video-highlight.local' }
+    : realSession
+  const balance = demoAccount ? 84 : realBalance
   const [authOpen, setAuthOpen] = useState(false)
 
   return (

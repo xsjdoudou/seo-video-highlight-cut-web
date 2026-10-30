@@ -14,6 +14,10 @@ public/media
 # 用户档案 / 充值 / 消费记录
 data
 
+# 本地账户页预览数据
+!src/data/
+!src/data/accountDemo.ts
+
 # 本地运行脚本可能包含真实凭证
 bash.sh
 

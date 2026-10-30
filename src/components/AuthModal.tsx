@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { isValidEmail, signIn, type Provider } from '../lib/auth'
 import { AppleIcon, BusinessIcon, FacebookIcon, GitHubIcon, GoogleIcon, MailIcon } from './icons'
 
@@ -31,6 +32,7 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     panel.current?.focus()
+    panel.current?.scrollTo({ top: 0 })
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prevOverflow
@@ -56,7 +58,7 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
     onDone()
   }
 
-  return (
+  return createPortal(
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={onClose}>
       <div className="auth" ref={panel} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <button type="button" className="auth__close" onClick={onClose} aria-label="Close">
@@ -142,6 +144,7 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
 
         <p className="auth__demo">Demo sign-in: nothing is sent anywhere and no real account is created.</p>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

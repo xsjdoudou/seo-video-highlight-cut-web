@@ -14,8 +14,9 @@ const ACCOUNT_PATH = '/account'
 export default function App() {
   const [activeClip, setActiveClip] = useState<Clip | null>(null)
   const [job, setJob] = useState<JobInput | null>(null)
+  const accountDemo = new URLSearchParams(window.location.search).get('account-demo') === 'aya'
   // 账户页的数据全从接口来，刷新和深链都能直接打开，不像 /create 那样依赖内存里的 job。
-  const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH)
+  const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH || accountDemo)
 
   // The job only lives in memory, so a reload or a deep link to /create has
   // nothing to show: send those visitors back to the landing page.
@@ -66,12 +67,12 @@ export default function App() {
 
   return (
     <>
-      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} />
+      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} demoAccount={accountDemo} />
       <main>
         {job ? (
           <CreatePage job={job} onRemove={leave} onOpenClip={setActiveClip} />
         ) : account ? (
-          <AccountPage onBack={leaveAccount} onStart={leaveAccount} onOpenClip={setActiveClip} />
+          <AccountPage onBack={leaveAccount} onStart={leaveAccount} onOpenClip={setActiveClip} demo={accountDemo} />
         ) : (
           <>
             <Hero />

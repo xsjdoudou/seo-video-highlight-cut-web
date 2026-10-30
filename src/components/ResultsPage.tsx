@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { formatDuration, type Clip, type ScoreBreakdown } from '../data/clips'
 import type { JobInput } from '../lib/videoSource'
-import { PLATFORM_LABEL, PlayIcon, PlatformIcon } from './icons'
+import { PlayIcon } from './icons'
 
 const DIMENSIONS: { key: keyof ScoreBreakdown; label: string; short: string }[] = [
   { key: 'hook', label: 'Hook', short: 'Stops the scroll' },
@@ -71,10 +71,6 @@ export function ResultCard({ clip, onOpen, eager = true }: { clip: Clip; onOpen:
 
       <div className="results-card__body">
         <div className="results-card__topline">
-          <span className="results-card__platform">
-            <PlatformIcon platform={clip.platform} size={17} />
-            {PLATFORM_LABEL[clip.platform]}
-          </span>
           <span className="results-card__score">
             <strong>{clip.score}</strong>
             <span>/100</span>

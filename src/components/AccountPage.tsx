@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Clip } from '../data/clips'
+import { DEMO_ACCOUNT, DEMO_GROUPS, DEMO_SESSION } from '../data/accountDemo'
 import { useSession } from '../lib/auth'
 import {
   fetchAccount,
@@ -17,17 +18,26 @@ export default function AccountPage({
   onBack,
   onStart,
   onOpenClip,
+  demo = false,
 }: {
   onBack: () => void
   onStart: () => void
   onOpenClip: (clip: Clip) => void
+  demo?: boolean
 }) {
-  const session = useSession()
+  const realSession = useSession()
+  const session = demo ? DEMO_SESSION : realSession
   const [phase, setPhase] = useState<Phase>('loading')
   const [account, setAccount] = useState<AccountView | null>(null)
   const [groups, setGroups] = useState<AssetGroup[]>([])
 
   useEffect(() => {
+    if (demo) {
+      setAccount(DEMO_ACCOUNT)
+      setGroups(DEMO_GROUPS)
+      setPhase('ready')
+      return
+    }
     if (!session) {
       setPhase('ready')
       setAccount(null)
@@ -47,7 +57,7 @@ export default function AccountPage({
     return () => {
       live = false
     }
-  }, [session])
+  }, [demo, session])
 
   const totalClips = groups.reduce((sum, group) => sum + group.clips.length, 0)
 
@@ -69,7 +79,7 @@ export default function AccountPage({
   }
 
   return (
-    <section className="account" aria-labelledby="account-heading">
+    <section className={`account${demo ? ' account--demo' : ''}`} aria-labelledby="account-heading">
       <div className="results-page__nav">
         <button type="button" className="results-page__back" onClick={onBack}>
           <span aria-hidden="true">←</span> Back
