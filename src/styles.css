@@ -1187,13 +1187,11 @@ button {
 
 .results-page__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   /* 卡片高度现在跟着各自的视频比例走，别被同一行里最高的那张拉长。 */
   align-items: start;
   gap: 18px;
-  /* 视频按原来的一半展示：列数和间距不变，整条栅格宽度减半，
-     每张卡片（以及卡内 9:16 的视频）宽高都正好缩到一半，靠左对齐表头。 */
-  max-width: calc(50% + 18px);
+  max-width: none;
 }
 
 .results-card {
