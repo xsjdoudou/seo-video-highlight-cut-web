@@ -1508,7 +1508,7 @@ button {
   font-size: 12px;
 }
 
-.account--demo .results-page__grid {
+.account__run .results-page__grid {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   width: 75%;
   gap: 64px;
