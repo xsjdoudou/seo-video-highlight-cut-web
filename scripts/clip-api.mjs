@@ -743,6 +743,11 @@ async function normalizeClipVideos(highlights, jobId, warnings) {
   for (const [index, highlight] of highlights.entries()) {
     const base = `h${String(index + 1).padStart(2, '0')}`
     const sourcePath = path.join(workDir, `${base}.src.mp4`)
+    const localUrl = `${PUBLIC_BASE}/uploads/clips/${jobId}/${base}.mp4`
+    if (highlight.video_url === localUrl) {
+      output.push(highlight)
+      continue
+    }
     try {
       await downloadToFile(highlight.video_url, sourcePath)
       await run(
@@ -762,7 +767,7 @@ async function normalizeClipVideos(highlights, jobId, warnings) {
         { cwd: workDir },
       )
       await fsp.rm(sourcePath, { force: true })
-      output.push({ ...highlight, video_url: `${PUBLIC_BASE}/uploads/clips/${jobId}/${base}.mp4` })
+      output.push({ ...highlight, video_url: localUrl })
     } catch (error) {
       warnings.push(`Clip ${index + 1} was kept on the source CDN because browser normalization failed.`)
       log(`${shortId(jobId)}   第 ${index + 1} 条视频标准化失败：${error.message.slice(0, 160)}`)
@@ -957,6 +962,7 @@ async function finalizeWorkerResult(record) {
       // so the browser still sees the same /uploads URL contract as before.
       highlights = await burnSubtitles(highlights, segments, job.id, job.warnings)
     }
+    highlights = await normalizeClipVideos(highlights, job.id, job.warnings)
     await finalizeRelayJob(job.id, {
       status: 'done',
       label: 'Done',
