@@ -42,6 +42,10 @@ sudo systemctl status clip-api web nginx --no-pager
 cd /home/ubuntu/code/seo-video-highlight-cut-web
 git pull --ff-only
 
+# 修复前端构建目录权限
+sudo chown -R ubuntu:ubuntu /home/ubuntu/code/seo-video-highlight-cut-web/dist
+sudo chown ubuntu:ubuntu /home/ubuntu/code/seo-video-highlight-cut-web/tsconfig.tsbuildinfo 2>/dev/null || true
+
 # 构建前端
 npm run build
 
