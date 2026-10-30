@@ -707,6 +707,8 @@ async function burnSubtitles(highlights, segments, jobId, warnings) {
           `subtitles=${base}.srt:force_style='FontSize=18,Outline=1,Shadow=0,MarginV=28'`,
           '-c:a',
           'copy',
+          '-movflags',
+          '+faststart',
           `${base}.mp4`,
         ],
         { cwd: workDir },
@@ -717,6 +719,53 @@ async function burnSubtitles(highlights, segments, jobId, warnings) {
       // 单条失败不拖垮整趟：页面上说一句，ffmpeg 的报错留给日志。
       warnings.push(`Clip ${index + 1} is without subtitles — burning them in failed.`)
       log(`${shortId(jobId)}   第 ${index + 1} 条压字幕失败：${error.message.slice(0, 160)}`)
+      output.push(highlight)
+    }
+  }
+  return output
+}
+
+/**
+ * Normalize worker-produced MP4s for browser streaming.
+ *
+ * The worker may return a valid MP4 whose moov atom is at the end of the file.
+ * ffprobe and desktop players can read that layout, but browser previews can
+ * remain at 0:00 while waiting for metadata. A stream-copy remux moves the
+ * index to the front without re-encoding the clip.
+ */
+async function normalizeClipVideos(highlights, jobId, warnings) {
+  if (!highlights.length) return highlights
+
+  const workDir = path.join(UPLOAD_DIR, 'clips', jobId)
+  await fsp.mkdir(workDir, { recursive: true })
+
+  const output = []
+  for (const [index, highlight] of highlights.entries()) {
+    const base = `h${String(index + 1).padStart(2, '0')}`
+    const sourcePath = path.join(workDir, `${base}.src.mp4`)
+    try {
+      await downloadToFile(highlight.video_url, sourcePath)
+      await run(
+        'ffmpeg',
+        [
+          '-y',
+          '-i',
+          `${base}.src.mp4`,
+          '-map',
+          '0',
+          '-c',
+          'copy',
+          '-movflags',
+          '+faststart',
+          `${base}.mp4`,
+        ],
+        { cwd: workDir },
+      )
+      await fsp.rm(sourcePath, { force: true })
+      output.push({ ...highlight, video_url: `${PUBLIC_BASE}/uploads/clips/${jobId}/${base}.mp4` })
+    } catch (error) {
+      warnings.push(`Clip ${index + 1} was kept on the source CDN because browser normalization failed.`)
+      log(`${shortId(jobId)}   第 ${index + 1} 条视频标准化失败：${error.message.slice(0, 160)}`)
       output.push(highlight)
     }
   }
@@ -818,6 +867,8 @@ async function runJob(job) {
     if (job.input.addSubtitles) {
       setStage(job, 'subtitles', 0.2)
       highlights = await burnSubtitles(highlights, segments, job.id, job.warnings)
+    } else {
+      highlights = await normalizeClipVideos(highlights, job.id, job.warnings)
     }
 
     job.status = 'done'
