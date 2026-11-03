@@ -123,6 +123,7 @@ export default function App() {
         <span className="footer__links">
           <a href={TERMS_PATH}>Terms of service</a>
           <a href={PRIVACY_PATH}>Privacy policy</a>
+          <a href="mailto:support@video-highlight.com">Contact support</a>
           <span className="footer__beta">Beta</span>
         </span>
       </footer>

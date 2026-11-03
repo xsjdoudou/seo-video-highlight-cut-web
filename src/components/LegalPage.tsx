@@ -151,40 +151,71 @@ export default function LegalPage({ kind, onBack }: LegalPageProps) {
       </p>
 
       <h2>6. Acceptable use</h2>
-      <p>You may not use the service to:</p>
+      <p>You may not use the service to upload, process, generate, or distribute content that:</p>
       <ul>
-        <li>Upload or process content that is illegal, infringing, deceptive, abusive, or violates another person’s privacy.</li>
-        <li>Create misleading deepfakes, impersonation, non-consensual intimate content, or sexual content involving minors.</li>
-        <li>Upload malware, attack the service, bypass limits, scrape it at scale, or resell access without written permission.</li>
-        <li>Use generated output as professional medical, legal, financial, or other regulated advice.</li>
+        <li>Is illegal, pornographic, sexually explicit, or otherwise NSFW, including sexual content involving minors.</li>
+        <li>Depicts or encourages graphic violence, gore, torture, terrorism, or instructions for serious physical harm.</li>
+        <li>Promotes hatred, dehumanization, or discrimination against people based on protected characteristics.</li>
+        <li>Contains child sexual abuse material or any other child-safety violation.</li>
+        <li>Creates misleading deepfakes, impersonates another person, or uses a person’s likeness without authorization.</li>
+        <li>Infringes copyright, trademark, publicity, privacy, or other third-party rights.</li>
+        <li>Uploads malware, attacks the service, bypasses limits, scrapes it at scale, or resells access without written permission.</li>
+        <li>Presents AI output as professional medical, legal, financial, or other regulated advice.</li>
       </ul>
-      <p>We may suspend or remove content and accounts that violate these terms or create security, legal, or operational risk.</p>
+      <p>Only submit content you are authorized to use. You are responsible for reviewing every generated clip before publishing it.</p>
 
-      <h2>7. Third-party services</h2>
+      <h2>7. Reporting and content moderation</h2>
+      <p>
+        To report a generated clip or other content that may violate these terms, email
+        <a href="mailto:support@video-highlight.com"> support@video-highlight.com</a> with the relevant account email,
+        clip or job URL, a description of the issue, and any supporting evidence. Do not include sensitive personal information unless it is necessary for the report.
+      </p>
+      <p>
+        We review reports and may review flagged content, account activity, and relevant technical records to assess the report.
+        Depending on the result, we may request more information, restrict or remove content, limit processing, suspend or terminate
+        an account, preserve evidence, or refer an urgent matter to the appropriate authority. We aim to acknowledge reports within
+        2 business days and take action as soon as reasonably practicable. We may not disclose confidential details of an investigation.
+      </p>
+
+      <h2>8. AI models and generated content</h2>
+      <p>
+        The current processing pipeline uses the following named models and services: OpenAI <strong>GPT-5.5</strong> for semantic
+        video understanding and highlight evaluation; Tencent Cloud MPS <strong>SmartSubtitles</strong> for speech recognition;
+        <strong>CLIP ViT-L/14@336px</strong> for visual shot analysis; <strong>SAM3</strong> for subject segmentation and
+        reframing; local <strong>YOLOv8s-face</strong> for face detection; and <strong>ERes2NetV2</strong> for speaker representation.
+        The pipeline configuration may change as the beta product evolves, and this page will be updated when the production model set changes.
+      </p>
+      <p>
+        These models assist with analysis and editing; they do not guarantee factual accuracy, copyright clearance, or suitability for publication.
+        You retain responsibility for the input rights and final use of every output.
+      </p>
+
+      <h2>9. Third-party services</h2>
       <p>
         Checkout is provided by Waffo Pancake. Cloud hosting, object storage, video processing, and other infrastructure may be
         provided by third parties. Their availability can affect processing time and results. You agree to their terms where applicable.
       </p>
 
-      <h2>8. Availability and liability</h2>
+      <h2>10. Availability and liability</h2>
       <p>
         The service is provided on an “as available” basis. We do not guarantee uninterrupted availability, a particular processing
         time, or that AI output will be accurate or suitable for your purpose. To the maximum extent permitted by law, Video Highlight
         is not liable for indirect or consequential losses. Our aggregate liability is limited to the amount you paid us in the 12 months before the event giving rise to the claim.
       </p>
 
-      <h2>9. Termination and changes</h2>
+      <h2>11. Termination and changes</h2>
       <p>
         You may stop using the service at any time. We may suspend or terminate access for fraud, abuse, a material breach, or legal requirements.
         We may update these terms as the service changes. Material changes will be posted here with a new effective date and, where required,
         additional notice.
       </p>
 
-      <h2>10. Contact</h2>
+      <h2>12. Contact</h2>
       <p>
         Billing: <a href="mailto:billing@video-highlight.com">billing@video-highlight.com</a><br />
         Support: <a href="mailto:support@video-highlight.com">support@video-highlight.com</a><br />
-        Privacy: <a href="mailto:privacy@video-highlight.com">privacy@video-highlight.com</a>
+        Privacy: <a href="mailto:privacy@video-highlight.com">privacy@video-highlight.com</a><br />
+        Content reports: <a href="mailto:support@video-highlight.com">support@video-highlight.com</a>
       </p>
     </LegalLayout>
   )
