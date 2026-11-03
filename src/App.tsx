@@ -6,12 +6,15 @@ import CreatePage from './components/CreatePage'
 import AccountPage from './components/AccountPage'
 import PricingPage from './components/PricingPage'
 import ClipModal from './components/ClipModal'
+import LegalPage from './components/LegalPage'
 import type { Clip } from './data/clips'
 import type { JobInput } from './lib/videoSource'
 
 const CREATE_PATH = '/create'
 const ACCOUNT_PATH = '/account'
 const PRICING_PATH = '/pricing'
+const TERMS_PATH = '/terms'
+const PRIVACY_PATH = '/privacy'
 
 export default function App() {
   const [activeClip, setActiveClip] = useState<Clip | null>(null)
@@ -19,6 +22,11 @@ export default function App() {
   // 账户页的数据全从接口来，刷新和深链都能直接打开，不像 /create 那样依赖内存里的 job。
   const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH)
   const [pricing, setPricing] = useState(() => window.location.pathname === PRICING_PATH)
+  const [legalPath, setLegalPath] = useState<'terms' | 'privacy' | null>(() => {
+    if (window.location.pathname === TERMS_PATH) return 'terms'
+    if (window.location.pathname === PRIVACY_PATH) return 'privacy'
+    return null
+  })
 
   // The job only lives in memory, so a reload or a deep link to /create has
   // nothing to show: send those visitors back to the landing page.
@@ -36,6 +44,7 @@ export default function App() {
       const path = window.location.pathname
       setAccount(path === ACCOUNT_PATH)
       setPricing(path === PRICING_PATH)
+      setLegalPath(path === TERMS_PATH ? 'terms' : path === PRIVACY_PATH ? 'privacy' : null)
       if (path !== CREATE_PATH) setJob(null)
       else if (!job) window.history.replaceState(null, '', '/')
     }
@@ -46,6 +55,7 @@ export default function App() {
   const start = useCallback((input: JobInput) => {
     setAccount(false)
     setPricing(false)
+    setLegalPath(null)
     setJob(input)
     window.history.pushState(null, '', CREATE_PATH)
     window.scrollTo(0, 0)
@@ -60,6 +70,7 @@ export default function App() {
     setJob(null)
     setAccount(true)
     setPricing(false)
+    setLegalPath(null)
     if (window.location.pathname !== ACCOUNT_PATH) window.history.pushState(null, '', ACCOUNT_PATH)
     window.scrollTo(0, 0)
   }, [])
@@ -68,6 +79,7 @@ export default function App() {
     setJob(null)
     setAccount(false)
     setPricing(true)
+    setLegalPath(null)
     if (window.location.pathname !== PRICING_PATH) window.history.pushState(null, '', PRICING_PATH)
     window.scrollTo(0, 0)
   }, [])
@@ -76,7 +88,8 @@ export default function App() {
   const leaveAccount = useCallback(() => {
     setAccount(false)
     setPricing(false)
-    if (window.location.pathname === ACCOUNT_PATH || window.location.pathname === PRICING_PATH) {
+    setLegalPath(null)
+    if ([ACCOUNT_PATH, PRICING_PATH, TERMS_PATH, PRIVACY_PATH].includes(window.location.pathname)) {
       window.history.replaceState(null, '', '/')
     }
   }, [])
@@ -96,6 +109,8 @@ export default function App() {
             onOpenClip={setActiveClip}
             onOpenPricing={openPricing}
           />
+        ) : legalPath ? (
+          <LegalPage kind={legalPath} onBack={leaveAccount} />
         ) : (
           <>
             <Hero />
@@ -104,7 +119,12 @@ export default function App() {
         )}
       </main>
       <footer className="footer">
-        © {new Date().getFullYear()} Video Highlight · AI clipping for podcasts and long-form video
+        <span>© {new Date().getFullYear()} Video Highlight · AI clipping for podcasts and long-form video</span>
+        <span className="footer__links">
+          <a href={TERMS_PATH}>Terms of service</a>
+          <a href={PRIVACY_PATH}>Privacy policy</a>
+          <span className="footer__beta">Beta</span>
+        </span>
       </footer>
       {activeClip && <ClipModal clip={activeClip} onClose={() => setActiveClip(null)} />}
     </>
