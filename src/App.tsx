@@ -4,12 +4,14 @@ import Hero from './components/Hero'
 import DemoShowcase from './components/DemoShowcase'
 import CreatePage from './components/CreatePage'
 import AccountPage from './components/AccountPage'
+import PricingPage from './components/PricingPage'
 import ClipModal from './components/ClipModal'
 import type { Clip } from './data/clips'
 import type { JobInput } from './lib/videoSource'
 
 const CREATE_PATH = '/create'
 const ACCOUNT_PATH = '/account'
+const PRICING_PATH = '/pricing'
 
 export default function App() {
   const [activeClip, setActiveClip] = useState<Clip | null>(null)
@@ -17,6 +19,7 @@ export default function App() {
   const accountDemo = new URLSearchParams(window.location.search).get('account-demo') === 'aya'
   // 账户页的数据全从接口来，刷新和深链都能直接打开，不像 /create 那样依赖内存里的 job。
   const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH || accountDemo)
+  const [pricing, setPricing] = useState(() => window.location.pathname === PRICING_PATH)
 
   // The job only lives in memory, so a reload or a deep link to /create has
   // nothing to show: send those visitors back to the landing page.
@@ -33,6 +36,7 @@ export default function App() {
     const onPopState = () => {
       const path = window.location.pathname
       setAccount(path === ACCOUNT_PATH)
+      setPricing(path === PRICING_PATH)
       if (path !== CREATE_PATH) setJob(null)
       else if (!job) window.history.replaceState(null, '', '/')
     }
@@ -42,6 +46,7 @@ export default function App() {
 
   const start = useCallback((input: JobInput) => {
     setAccount(false)
+    setPricing(false)
     setJob(input)
     window.history.pushState(null, '', CREATE_PATH)
     window.scrollTo(0, 0)
@@ -55,24 +60,44 @@ export default function App() {
   const openAccount = useCallback(() => {
     setJob(null)
     setAccount(true)
+    setPricing(false)
     if (window.location.pathname !== ACCOUNT_PATH) window.history.pushState(null, '', ACCOUNT_PATH)
+    window.scrollTo(0, 0)
+  }, [])
+
+  const openPricing = useCallback(() => {
+    setJob(null)
+    setAccount(false)
+    setPricing(true)
+    if (window.location.pathname !== PRICING_PATH) window.history.pushState(null, '', PRICING_PATH)
     window.scrollTo(0, 0)
   }, [])
 
   // 直接深链打开 /account 时身后可能没有历史，用 replaceState 回首页而不是 back()。
   const leaveAccount = useCallback(() => {
     setAccount(false)
-    if (window.location.pathname === ACCOUNT_PATH) window.history.replaceState(null, '', '/')
+    setPricing(false)
+    if (window.location.pathname === ACCOUNT_PATH || window.location.pathname === PRICING_PATH) {
+      window.history.replaceState(null, '', '/')
+    }
   }, [])
 
   return (
     <>
-      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} demoAccount={accountDemo} />
+      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} onOpenPricing={openPricing} demoAccount={accountDemo} />
       <main>
         {job ? (
           <CreatePage job={job} onRemove={leave} onOpenClip={setActiveClip} />
+        ) : pricing ? (
+          <PricingPage onBack={leaveAccount} />
         ) : account ? (
-          <AccountPage onBack={leaveAccount} onStart={leaveAccount} onOpenClip={setActiveClip} demo={accountDemo} />
+          <AccountPage
+            onBack={leaveAccount}
+            onStart={leaveAccount}
+            onOpenClip={setActiveClip}
+            onOpenPricing={openPricing}
+            demo={accountDemo}
+          />
         ) : (
           <>
             <Hero />

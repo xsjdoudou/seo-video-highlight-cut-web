@@ -18,11 +18,13 @@ export default function AccountPage({
   onBack,
   onStart,
   onOpenClip,
+  onOpenPricing,
   demo = false,
 }: {
   onBack: () => void
   onStart: () => void
   onOpenClip: (clip: Clip) => void
+  onOpenPricing: () => void
   demo?: boolean
 }) {
   const realSession = useSession()
@@ -93,6 +95,9 @@ export default function AccountPage({
         <p className="results-page__intro">
           Every clip you've generated lives here. Open any one of them to see the full evaluation again.
         </p>
+        <button type="button" className="btn btn--light" onClick={onOpenPricing}>
+          Buy credits
+        </button>
       </header>
 
       <section className="results-overview" aria-label="Account overview">

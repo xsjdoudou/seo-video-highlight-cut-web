@@ -1454,6 +1454,128 @@ button {
 
 /* ---------- Account ---------- */
 
+.pricing {
+  width: 100%;
+  margin: 0 auto;
+  padding: 34px 28px 96px;
+}
+
+.pricing__nav {
+  padding-bottom: 22px;
+  border-bottom: 1px solid #1d1d1d;
+}
+
+.pricing__header {
+  max-width: 760px;
+  padding: 52px 0 34px;
+}
+
+.pricing__header h1 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 56px);
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.pricing__header p:last-child {
+  max-width: 640px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.pricing__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.pricing__plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+  padding: 28px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #151616;
+}
+
+.pricing__plan--featured {
+  border-color: rgba(200, 255, 61, 0.55);
+  background: #1b1e17;
+}
+
+.pricing__badge {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pricing__plan h2 {
+  margin: 0 0 22px;
+  font-size: 22px;
+}
+
+.pricing__credits,
+.pricing__price {
+  margin: 0;
+  color: var(--muted);
+}
+
+.pricing__credits strong {
+  color: #fff;
+  font-size: 28px;
+}
+
+.pricing__price {
+  margin-top: 12px;
+}
+
+.pricing__price strong {
+  color: #fff;
+  font-size: 19px;
+}
+
+.pricing__price span {
+  font-size: 12px;
+}
+
+.pricing__button {
+  width: 100%;
+  margin-top: auto;
+}
+
+.pricing__button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.pricing__message {
+  max-width: 1120px;
+  margin: 0 auto 22px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pricing__message--error {
+  color: #ffb4b4;
+}
+
+.pricing__fineprint {
+  margin: 22px auto 0;
+  color: #666;
+  font-size: 12px;
+  text-align: center;
+}
+
 .account {
   width: 100%;
   margin: 0 auto;
@@ -2053,6 +2175,16 @@ button {
     padding-left: 20px;
   }
 
+  .pricing {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .pricing__grid {
+    grid-template-columns: 1fr;
+    max-width: 520px;
+  }
+
   .results-page__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     /* 窄屏改成两列，保证视频和卡片文字仍然可读。 */
@@ -2117,6 +2249,10 @@ button {
     padding: 24px 16px 64px;
   }
 
+  .pricing {
+    padding: 24px 16px 64px;
+  }
+
   .results-page__nav {
     align-items: flex-start;
     flex-direction: column;
@@ -2128,6 +2264,14 @@ button {
   }
 
   .results-page__header h1 {
+    font-size: 38px;
+  }
+
+  .pricing__header {
+    padding: 38px 0 28px;
+  }
+
+  .pricing__header h1 {
     font-size: 38px;
   }
 

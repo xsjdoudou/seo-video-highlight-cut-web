@@ -2,6 +2,7 @@
 //
 //   data/users.json          用户档案，按 id 存一个 JSON 数组，整体原子重写
 //   data/recharges.jsonl     充值流水，一行一条，只追加
+//   data/payment-events.jsonl 已处理的支付事件，一行一条，用于 webhook 幂等
 //   data/consumptions.jsonl  消费流水，一行一条，只追加
 //   data/assets.jsonl        剪出来的成片，一条片段一行，只追加
 //
@@ -31,6 +32,7 @@ export const SIGNUP_BONUS_CREDITS = Math.max(0, Number(env('SIGNUP_BONUS_CREDITS
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const RECHARGES_FILE = path.join(DATA_DIR, 'recharges.jsonl')
+const PAYMENT_EVENTS_FILE = path.join(DATA_DIR, 'payment-events.jsonl')
 const CONSUMPTIONS_FILE = path.join(DATA_DIR, 'consumptions.jsonl')
 const ASSETS_FILE = path.join(DATA_DIR, 'assets.jsonl')
 
@@ -212,6 +214,34 @@ function buildRecharge({ user, credits, amount = 0, currency = 'CNY', method = '
   }
 }
 
+/** Add a payment-backed recharge exactly once; Waffo retries webhooks. */
+export function addPaymentRecharge({ user, credits, amount = 0, currency = 'USD', paymentId, orderId = '', note = '' }) {
+  const key = String(paymentId || orderId || '').trim()
+  if (!key) throw new Error('paymentId 不能为空')
+  return serialize(async () => {
+    const events = await readJsonLines(PAYMENT_EVENTS_FILE)
+    const existing = events.find((event) => event.paymentId === key)
+    if (existing?.recharge) return { created: false, recharge: existing.recharge }
+
+    const recharge = buildRecharge({
+      user,
+      credits,
+      amount,
+      currency,
+      method: 'waffo',
+      note: note || `Waffo payment ${key}`,
+    })
+    await appendJsonLineLocked(RECHARGES_FILE, { ...recharge, paymentId: key, orderId: String(orderId || '') })
+    await appendJsonLineLocked(PAYMENT_EVENTS_FILE, {
+      paymentId: key,
+      orderId: String(orderId || ''),
+      recharge,
+      createdAt: new Date().toISOString(),
+    })
+    return { created: true, recharge }
+  })
+}
+
 // -------------------------------------------------------------------- 消费
 
 export function listConsumptions() {
@@ -326,6 +356,7 @@ export function describeStore() {
   return {
     users: USERS_FILE,
     recharges: RECHARGES_FILE,
+    paymentEvents: PAYMENT_EVENTS_FILE,
     consumptions: CONSUMPTIONS_FILE,
     assets: ASSETS_FILE,
     exists: {

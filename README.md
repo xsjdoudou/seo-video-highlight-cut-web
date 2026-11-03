@@ -38,6 +38,35 @@ SEO_TOKEN=<与 seo_server.py 相同；若本机服务未启用鉴权可留空>
 模板位于阿里云仓库的 `deploy/worker.env.example`，复制后填写真实令牌并执行
 `chmod 600 /etc/seo-video-highlight/worker.env`。
 
+### Waffo 付费积分
+
+网站的 Pricing 和账户页已接入 Waffo 托管收银台。付款流程是：AWS 服务端创建
+checkout session → 浏览器跳转 Waffo → Waffo 向 `/api/webhooks/waffo` 发送签名的
+`order.completed` → 验签并按 payment id 幂等地给账户增加积分。浏览器回到成功页本身
+不会直接加积分。
+
+在 Waffo Dashboard 中创建三个一次性产品，并将生产环境的 Product ID 填入
+`.env`/`web.env` 中的 `WAFFO_PLAN_*_PRODUCT_ID`；`*_CREDITS` 必须与该产品实际售卖的
+积分一致。把 API 私钥和 Waffo Webhook Public Key 保存到服务器上的文件，文件权限设为
+`600`，不要写进仓库或 systemd unit：
+
+```bash
+sudo chmod 600 /etc/seo-video-highlight/waffo-private-key.pem
+sudo chmod 600 /etc/seo-video-highlight/waffo-webhook-public-key.pem
+```
+
+在 Waffo 的 Webhooks 设置中添加：
+
+```text
+https://video-highlight.com/api/webhooks/waffo
+事件：order.completed
+环境：Production
+```
+
+然后重启 `clip-api`。用 `GET /api/billing/plans` 检查套餐的 `available` 是否为
+`true`，再用 Waffo Test 环境和测试 Product ID 完成一次支付验证。生产环境的
+`WAFFO_ENVIRONMENT`、Product ID、Merchant ID 和 webhook 公钥必须成套配置，不能混用。
+
 两台机器分别安装 unit 后启动：
 
 ```bash

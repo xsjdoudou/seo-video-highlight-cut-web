@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { formatDuration, pickSourceIndex, sources, type Clip } from '../data/clips'
-import type { JobInput } from '../lib/videoSource'
+import { parseYouTubeId, type JobInput } from '../lib/videoSource'
 import ClipCard from './ClipCard'
 import { HandCursor, LinkIcon } from './icons'
 
@@ -145,12 +145,14 @@ export default function DemoShowcase({
       e.preventDefault()
       if (!typed.trim()) {
         setNotice('Paste a video link first.')
-      } else if (userEdited) {
-        onStart({ kind: 'link', url: typed.trim() })
-      } else {
+      } else if (!userEdited) {
         // Still the scripted prompt — the button replays the demo instead.
         setNotice('')
         replay()
+      } else if (!parseYouTubeId(typed)) {
+        setNotice('Only YouTube links are supported. Please paste a YouTube video URL.')
+      } else {
+        onStart({ kind: 'link', url: typed.trim() })
       }
     },
     [typed, userEdited, replay, onStart],

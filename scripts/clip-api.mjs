@@ -9,7 +9,9 @@
 //   POST /api/session       登录后写用户档案，返回账户和余额
 //   GET  /api/account       读某个邮箱的余额和流水
 //   GET  /api/assets        读某个邮箱剪出来的全部成片
-//   POST /api/topup         记一笔充值
+//   GET  /api/billing/plans  返回公开的 Waffo 套餐配置
+//   POST /api/billing/checkout 创建 Waffo 托管收银台会话
+//   POST /api/webhooks/waffo 接收已验签的付款完成事件
 //
 // 用户、充值、消费、资产四份文件在 scripts/store.mjs。
 //
@@ -53,7 +55,7 @@ import { fileURLToPath } from 'node:url'
 import {
   addAssets,
   addConsumption,
-  addRecharge,
+  addPaymentRecharge,
   creditsForSeconds,
   describeStore,
   findUserByEmail,
@@ -97,6 +99,43 @@ const DESUB_TOKEN = env('DESUB_TOKEN', '')
 const UPLOAD_DIR = path.resolve(env('UPLOAD_DIR', path.join(REPO_ROOT, '.uploads')))
 const WORKER_TOKEN = env('WORKER_TOKEN', '').trim()
 const WORKER_POLL_MAX_WAIT_MS = Math.min(30_000, Math.max(1_000, Number(env('WORKER_POLL_MAX_WAIT_MS', 25_000))))
+
+// Waffo credentials stay server-side. Product ids and credits are configured
+// together so the browser can choose a plan but can never choose its credit amount.
+const WAFFO_API_BASE = String(env('WAFFO_API_BASE', 'https://api.waffo.ai')).replace(/\/+$/, '')
+const WAFFO_ENVIRONMENT = env('WAFFO_ENVIRONMENT', 'prod')
+const WAFFO_MERCHANT_ID = env('WAFFO_MERCHANT_ID', '').trim()
+const WAFFO_PRIVATE_KEY_FILE = env('WAFFO_PRIVATE_KEY_FILE', '')
+const WAFFO_WEBHOOK_PUBLIC_KEY_FILE = env('WAFFO_WEBHOOK_PUBLIC_KEY_FILE', '')
+const WAFFO_CURRENCY = env('WAFFO_CURRENCY', 'USD').toUpperCase()
+const WAFFO_SUCCESS_URL = env('WAFFO_SUCCESS_URL', `${PUBLIC_BASE}/account?payment=success`)
+const WAFFO_PLANS = [
+  {
+    id: 'starter',
+    name: env('WAFFO_PLAN_STARTER_NAME', 'Starter'),
+    credits: Math.max(1, Number(env('WAFFO_PLAN_STARTER_CREDITS', 100))),
+    price: env('WAFFO_PLAN_STARTER_PRICE', '9.00'),
+    productId: env('WAFFO_PLAN_STARTER_PRODUCT_ID', '').trim(),
+  },
+  {
+    id: 'creator',
+    name: env('WAFFO_PLAN_CREATOR_NAME', 'Creator'),
+    credits: Math.max(1, Number(env('WAFFO_PLAN_CREATOR_CREDITS', 500))),
+    price: env('WAFFO_PLAN_CREATOR_PRICE', '29.00'),
+    productId: env('WAFFO_PLAN_CREATOR_PRODUCT_ID', '').trim(),
+  },
+  {
+    id: 'studio',
+    name: env('WAFFO_PLAN_STUDIO_NAME', 'Studio'),
+    credits: Math.max(1, Number(env('WAFFO_PLAN_STUDIO_CREDITS', 1200))),
+    price: env('WAFFO_PLAN_STUDIO_PRICE', '59.00'),
+    productId: env('WAFFO_PLAN_STUDIO_PRODUCT_ID', '').trim(),
+  },
+]
+
+function waffoConfigured() {
+  return Boolean(WAFFO_MERCHANT_ID && WAFFO_PRIVATE_KEY_FILE && WAFFO_WEBHOOK_PUBLIC_KEY_FILE)
+}
 
 /** 上传文件保留多久，超过就在下次上传时顺手清掉。 */
 const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
@@ -151,6 +190,7 @@ function printBanner() {
   log(`充值记录:     ${store.recharges}`)
   log(`消费记录:     ${store.consumptions}`)
   log(`成片记录:     ${store.assets}`)
+  log(`Waffo 支付:   ${waffoConfigured() ? '已配置' : '未配置'}`)
   // 腾讯 MPS 要这两个才能跑 ASR，少了的话等跑到一半才报错，不如开机就讲清楚。
   const credentials = process.env.TENCENT_SECRET_ID && process.env.TENCENT_SECRET_KEY
   log(`腾讯云凭证:   ${credentials ? '已设置' : '缺失！jogg ASR 会失败，用 bash.sh 带上环境变量启动'}`)
@@ -242,7 +282,7 @@ function sendJson(res, status, body) {
  * 以前这里写死不限时，是因为 /v1/seo 当年是同步接口，一跑几十分钟。现在它改成了
  * 提交 + 轮询，每个请求都该很快回来——真的卡住就是链路断了，早点报比吊着强。
  */
-function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0 } = {}) {
+function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0, extraHeaders = {} } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url)
     const body = payload === undefined ? null : Buffer.from(JSON.stringify(payload), 'utf8')
@@ -252,6 +292,7 @@ function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0 
       headers['Content-Length'] = body.length
     }
     if (token) headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`
+    Object.assign(headers, extraHeaders)
 
     const transport = target.protocol === 'https:' ? https : http
     const request = transport.request(target, { method, headers, timeout: timeoutMs }, (response) => {
@@ -346,6 +387,24 @@ function readJsonBody(req, limitBytes = 16 * 1024 * 1024) {
         reject(new ApiError("That request didn't come through. Please try again."))
       }
     })
+    req.on('error', reject)
+  })
+}
+
+function readRawBody(req, limitBytes = 512 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > limitBytes) {
+        reject(new ApiError('Webhook body is too large.', 413))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
 }
@@ -1088,12 +1147,44 @@ function jobView(job) {
   }
 }
 
+/** Accept the same YouTube URL shapes as the browser preview parser. */
+function isYouTubeVideoUrl(input) {
+  let url
+  try {
+    url = new URL(String(input || '').trim())
+  } catch {
+    return false
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) return false
+  const host = url.hostname.replace(/^www\./, '').toLowerCase()
+  const id =
+    host === 'youtu.be'
+      ? url.pathname.slice(1).split('/')[0]
+      : host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtube-nocookie.com'
+        ? url.searchParams.get('v') || url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1] || ''
+        : ''
+  return /^[\w-]{11}$/.test(id)
+}
+
+/** Uploaded files are already stored by this service and remain supported. */
+function isUploadedVideoUrl(input) {
+  let source
+  let base
+  try {
+    source = new URL(String(input || '').trim())
+    base = new URL(SOURCE_PUBLIC_BASE)
+  } catch {
+    return false
+  }
+  return source.origin === base.origin && source.pathname.startsWith('/uploads/')
+}
+
 async function handleCreateJob(req, res) {
   if (!WORKER_TOKEN) throw new ApiError('Video processing is not configured yet. Please try again later.', 503)
   const body = await readJsonBody(req)
   const videoUrl = String(body.videoUrl ?? '').trim()
-  if (!/^https?:\/\//.test(videoUrl)) {
-    throw new ApiError("That video link doesn't look right. Use a direct http(s) link, or upload the file instead.")
+  if (!isYouTubeVideoUrl(videoUrl) && !isUploadedVideoUrl(videoUrl)) {
+    throw new ApiError('Only YouTube links are supported. Please paste a YouTube video URL.')
   }
   const job = await createJob({
     videoUrl,
@@ -1138,26 +1229,148 @@ async function handleAssets(req, res, url) {
   sendJson(res, 200, { assets, total: assets.length })
 }
 
-async function handleTopup(req, res) {
-  const body = await readJsonBody(req, 64 * 1024)
-  const user = await findUserByEmail(body.email)
-  if (!user) throw new ApiError('用户不存在，先登录一次', 404)
+function publicBillingPlans() {
+  return WAFFO_PLANS.map(({ id, name, credits, price, productId }) => ({
+    id,
+    name,
+    credits,
+    price,
+    currency: WAFFO_CURRENCY,
+    available: Boolean(productId && waffoConfigured()),
+  }))
+}
 
-  let recharge
-  try {
-    recharge = await addRecharge({
-      user,
-      credits: body.credits,
-      amount: body.amount,
-      currency: body.currency ?? 'CNY',
-      method: String(body.method ?? 'manual'),
-      note: String(body.note ?? ''),
-    })
-  } catch (error) {
-    throw new ApiError(error.message)
+function findBillingPlan(id) {
+  return WAFFO_PLANS.find((plan) => plan.id === String(id || '').trim()) || null
+}
+
+async function waffoRequest(pathname, body) {
+  if (!WAFFO_MERCHANT_ID || !WAFFO_PRIVATE_KEY_FILE) {
+    throw new ApiError('Payments are not configured yet. Please try again later.', 503)
   }
-  const account = await getAccount(user.email)
-  sendJson(res, 200, { recharge, balance: account.balance })
+  const payload = JSON.stringify(body)
+  // Waffo API-key signatures use Unix seconds; webhook timestamps use ms.
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const bodyHash = crypto.createHash('sha256').update(payload).digest('base64')
+  const canonical = `POST\n${pathname}\n${timestamp}\n${bodyHash}`
+  let privateKey
+  try {
+    privateKey = await fsp.readFile(WAFFO_PRIVATE_KEY_FILE, 'utf8')
+  } catch {
+    throw new ApiError('Payments are not configured yet. Please try again later.', 503)
+  }
+  const signature = crypto.sign('sha256', Buffer.from(canonical), privateKey).toString('base64')
+  return requestJson(`${WAFFO_API_BASE}${pathname}`, body, {
+    timeoutMs: 15_000,
+    extraHeaders: {
+      'X-Merchant-Id': WAFFO_MERCHANT_ID,
+      'X-Timestamp': timestamp,
+      'X-Signature': signature,
+    },
+  })
+}
+
+async function handleBillingPlans(req, res) {
+  sendJson(res, 200, { configured: waffoConfigured(), plans: publicBillingPlans() })
+}
+
+async function handleBillingCheckout(req, res) {
+  const body = await readJsonBody(req, 64 * 1024)
+  const email = String(body.email ?? '').trim().toLowerCase()
+  const plan = findBillingPlan(body.planId)
+  if (!waffoConfigured()) throw new ApiError('Payments are not configured yet. Please try again later.', 503)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new ApiError('Please sign in before buying credits.')
+  if (!plan?.productId) throw new ApiError('That credit package is not available yet.', 503)
+
+  const user = await findUserByEmail(email)
+  if (!user) throw new ApiError('Please sign in before buying credits.', 401)
+
+  const pathName = '/v1/actions/checkout/create-session'
+  const result = await waffoRequest(pathName, {
+    productId: plan.productId,
+    currency: WAFFO_CURRENCY,
+    buyerEmail: email,
+    successUrl: WAFFO_SUCCESS_URL,
+    darkMode: true,
+    language: 'en',
+    metadata: {
+      productId: plan.productId,
+      planId: plan.id,
+      credits: String(plan.credits),
+      userEmail: email,
+    },
+    orderMerchantExternalId: `vh_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,
+  })
+  const checkoutUrl = result?.data?.checkoutUrl
+  if (typeof checkoutUrl !== 'string' || !/^https:\/\//.test(checkoutUrl)) {
+    throw new ApiError('Waffo did not return a valid checkout link.', 502)
+  }
+  sendJson(res, 200, { checkoutUrl })
+}
+
+function parseWaffoSignature(header) {
+  const values = {}
+  for (const part of String(header || '').split(',')) {
+    const [key, ...rest] = part.split('=')
+    if (key && rest.length) values[key.trim()] = rest.join('=').trim()
+  }
+  return values
+}
+
+async function verifyWaffoWebhook(rawBody, header) {
+  if (!WAFFO_WEBHOOK_PUBLIC_KEY_FILE) return false
+  const { t, v1 } = parseWaffoSignature(header)
+  const timestamp = Number(t)
+  if (!t || !v1 || !Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 45 * 60 * 1000) return false
+  let publicKey
+  try {
+    publicKey = await fsp.readFile(WAFFO_WEBHOOK_PUBLIC_KEY_FILE, 'utf8')
+  } catch {
+    return false
+  }
+  return crypto.verify('RSA-SHA256', Buffer.from(`${t}.${rawBody.toString('utf8')}`), publicKey, Buffer.from(v1, 'base64'))
+}
+
+async function handleWaffoWebhook(req, res) {
+  const rawBody = await readRawBody(req)
+  const signature = req.headers['x-waffo-signature']
+  if (!(await verifyWaffoWebhook(rawBody, signature))) throw new ApiError('Invalid Waffo webhook signature.', 401)
+
+  let event
+  try {
+    event = JSON.parse(rawBody.toString('utf8'))
+  } catch {
+    throw new ApiError('Invalid Waffo webhook body.', 400)
+  }
+  if (event.eventType !== 'order.completed') {
+    sendJson(res, 200, { received: true, ignored: true })
+    return
+  }
+  if (event.mode && event.mode !== WAFFO_ENVIRONMENT) throw new ApiError('Waffo webhook environment mismatch.', 400)
+
+  const data = event.data || {}
+  const metadata = data.orderMetadata || {}
+  const plan = findBillingPlan(metadata.planId)
+  const credits = Number(metadata.credits)
+  const email = String(metadata.userEmail || data.buyerEmail || '').trim().toLowerCase()
+  const paymentId = String(data.paymentId || event.eventId || event.id || '').trim()
+  if (!plan || plan.credits !== credits || !paymentId || !email) {
+    throw new ApiError('Waffo payment metadata is incomplete.', 422)
+  }
+  const user = await findUserByEmail(email)
+  if (!user) throw new ApiError('The Waffo buyer does not have a local account.', 422)
+
+  const result = await addPaymentRecharge({
+    user,
+    credits,
+    amount: data.chargedAmount ?? data.amount ?? 0,
+    currency: data.currency || WAFFO_CURRENCY,
+    paymentId,
+    orderId: data.orderId || '',
+    note: `${plan.name} credits`,
+  })
+  log(`Waffo 付款${result.created ? '到账' : '重复回调已忽略'} ${paymentId} ${email} +${credits} credits`)
+  sendJson(res, 200, { received: true, credited: result.created })
 }
 
 // -------------------------------------------------------------------- 中间件
@@ -1189,7 +1402,9 @@ export function createClipApi() {
       if (pathname === '/api/session' && req.method === 'POST') return handleSession(req, res)
       if (pathname === '/api/account' && req.method === 'GET') return handleAccount(req, res, url)
       if (pathname === '/api/assets' && req.method === 'GET') return handleAssets(req, res, url)
-      if (pathname === '/api/topup' && req.method === 'POST') return handleTopup(req, res)
+      if (pathname === '/api/billing/plans' && req.method === 'GET') return handleBillingPlans(req, res)
+      if (pathname === '/api/billing/checkout' && req.method === 'POST') return handleBillingCheckout(req, res)
+      if (pathname === '/api/webhooks/waffo' && req.method === 'POST') return handleWaffoWebhook(req, res)
       if (pathname.startsWith('/api/clip/') && req.method === 'GET') {
         const job = await getRelayJob(pathname.slice('/api/clip/'.length))
         if (!job) throw new ApiError('This job has expired. Please run it again.', 404)

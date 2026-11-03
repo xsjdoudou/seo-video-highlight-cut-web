@@ -21,10 +21,12 @@ function Chevron() {
 export default function Navbar({
   accountPath,
   onOpenAccount,
+  onOpenPricing,
   demoAccount = false,
 }: {
   accountPath: string
   onOpenAccount: () => void
+  onOpenPricing: () => void
   demoAccount?: boolean
 }) {
   const realSession = useSession()
@@ -44,7 +46,17 @@ export default function Navbar({
         </a>
         <nav className="navbar__links" aria-label="Main">
           {NAV_ITEMS.map((item) => (
-            <a key={item.label} href="#" className="navbar__link">
+            <a
+              key={item.label}
+              href={item.label === 'Pricing' ? '/pricing' : '#'}
+              className="navbar__link"
+              onClick={(event) => {
+                if (item.label !== 'Pricing') return
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+                event.preventDefault()
+                onOpenPricing()
+              }}
+            >
               {item.label}
               {item.dropdown && <Chevron />}
             </a>
