@@ -5,6 +5,7 @@
 //   data/payment-events.jsonl 已处理的支付事件，一行一条，用于 webhook 幂等
 //   data/consumptions.jsonl  消费流水，一行一条，只追加
 //   data/assets.jsonl        剪出来的成片，一条片段一行，只追加
+//   data/sessions.json       HttpOnly 登录会话，只存令牌哈希
 //
 // 流水用 JSONL 是因为它们只增不改：追加一行不会动到已经写好的内容，
 // 进程被 kill 也最多丢最后一行。users.json 要改（最近登录时间、登录次数），
@@ -15,11 +16,13 @@
 // 环境变量：
 //   DATA_DIR               数据目录      默认 <repo>/data
 //   SIGNUP_BONUS_CREDITS   注册赠送积分  默认 100（设 0 就不送）
+//   AUTH_SESSION_TTL_MS    登录会话时长  默认 30 天
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { env } from './env.mjs'
 
@@ -35,6 +38,9 @@ const RECHARGES_FILE = path.join(DATA_DIR, 'recharges.jsonl')
 const PAYMENT_EVENTS_FILE = path.join(DATA_DIR, 'payment-events.jsonl')
 const CONSUMPTIONS_FILE = path.join(DATA_DIR, 'consumptions.jsonl')
 const ASSETS_FILE = path.join(DATA_DIR, 'assets.jsonl')
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json')
+const SESSION_TTL_MS = Math.max(60 * 60 * 1000, Number(env('AUTH_SESSION_TTL_MS', 30 * 24 * 60 * 60 * 1000)))
+const scryptAsync = promisify(crypto.scrypt)
 
 /** 和前端 src/lib/videoSource.ts 里的 CREDITS_PER_MINUTE 保持一致。 */
 const CREDITS_PER_MINUTE = 2
@@ -127,6 +133,118 @@ export async function findUserByEmail(email) {
   if (!address) return null
   const users = await readJsonArray(USERS_FILE)
   return users.find((user) => user.email === address) ?? null
+}
+
+export async function findUserById(userId) {
+  const id = String(userId ?? '').trim()
+  if (!id) return null
+  const users = await readJsonArray(USERS_FILE)
+  return users.find((user) => user.id === id) ?? null
+}
+
+export async function hashPassword(password) {
+  const value = String(password ?? '')
+  const salt = crypto.randomBytes(16).toString('hex')
+  const derivedKey = await scryptAsync(value, salt, 64)
+  return `scrypt$${salt}$${Buffer.from(derivedKey).toString('hex')}`
+}
+
+export async function verifyPassword(password, encoded) {
+  const [algorithm, salt, expectedHex] = String(encoded ?? '').split('$')
+  if (algorithm !== 'scrypt' || !salt || !expectedHex || expectedHex.length % 2 || !/^[0-9a-f]+$/i.test(expectedHex)) return false
+  const actual = Buffer.from(await scryptAsync(String(password ?? ''), salt, expectedHex.length / 2))
+  const expected = Buffer.from(expectedHex, 'hex')
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected)
+}
+
+/** Register a real password account. Existing demo records cannot be used to log in. */
+export function registerUser({ email, name, password }) {
+  const address = normalizeEmail(email)
+  if (!address) throw new Error('email 不能为空')
+
+  return serialize(async () => {
+    const users = await readJsonArray(USERS_FILE)
+    if (users.some((user) => user.email === address)) return { user: null, created: false }
+
+    const now = new Date().toISOString()
+    const user = {
+      id: id('u'),
+      email: address,
+      name: name || address.split('@')[0],
+      provider: 'email',
+      demo: false,
+      passwordHash: await hashPassword(password),
+      createdAt: now,
+      lastLoginAt: now,
+      loginCount: 1,
+    }
+    users.push(user)
+    await writeJsonArray(USERS_FILE, users)
+
+    if (SIGNUP_BONUS_CREDITS > 0) {
+      await addRechargeLocked({
+        user,
+        credits: SIGNUP_BONUS_CREDITS,
+        amount: 0,
+        method: 'signup_bonus',
+        note: '新用户注册赠送',
+      })
+    }
+    return { user, created: true }
+  })
+}
+
+/** Verify a password and update login metadata atomically. */
+export function authenticateUser({ email, password }) {
+  const address = normalizeEmail(email)
+  return serialize(async () => {
+    const users = await readJsonArray(USERS_FILE)
+    const index = users.findIndex((user) => user.email === address)
+    if (index < 0 || !users[index].passwordHash || !(await verifyPassword(password, users[index].passwordHash))) {
+      return null
+    }
+    const user = users[index]
+    users[index] = {
+      ...user,
+      lastLoginAt: new Date().toISOString(),
+      loginCount: (user.loginCount ?? 0) + 1,
+    }
+    await writeJsonArray(USERS_FILE, users)
+    return users[index]
+  })
+}
+
+function sessionTokenHash(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex')
+}
+
+export function createSession(user) {
+  const token = crypto.randomBytes(32).toString('base64url')
+  const expiresAt = Date.now() + SESSION_TTL_MS
+  return serialize(async () => {
+    const sessions = await readJsonArray(SESSIONS_FILE)
+    const active = sessions.filter((session) => Number(session.expiresAt) > Date.now())
+    active.push({ tokenHash: sessionTokenHash(token), userId: user.id, expiresAt })
+    await writeJsonArray(SESSIONS_FILE, active)
+    return { token, expiresAt }
+  })
+}
+
+export async function userForSession(token) {
+  const value = String(token ?? '').trim()
+  if (!value) return null
+  const sessions = await readJsonArray(SESSIONS_FILE)
+  const session = sessions.find((item) => item.tokenHash === sessionTokenHash(value) && Number(item.expiresAt) > Date.now())
+  return session ? findUserById(session.userId) : null
+}
+
+export function deleteSession(token) {
+  const hash = sessionTokenHash(token)
+  return serialize(async () => {
+    const sessions = await readJsonArray(SESSIONS_FILE)
+    const remaining = sessions.filter((session) => session.tokenHash !== hash)
+    if (remaining.length !== sessions.length) await writeJsonArray(SESSIONS_FILE, remaining)
+  })
 }
 
 /**

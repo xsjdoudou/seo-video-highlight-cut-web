@@ -22,19 +22,13 @@ export default function Navbar({
   accountPath,
   onOpenAccount,
   onOpenPricing,
-  demoAccount = false,
 }: {
   accountPath: string
   onOpenAccount: () => void
   onOpenPricing: () => void
-  demoAccount?: boolean
 }) {
-  const realSession = useSession()
-  const realBalance = useBalance()
-  const session = demoAccount
-    ? { name: 'Demo account', email: 'demo@video-highlight.local' }
-    : realSession
-  const balance = demoAccount ? 84 : realBalance
+  const session = useSession()
+  const balance = useBalance()
   const [authOpen, setAuthOpen] = useState(false)
 
   return (

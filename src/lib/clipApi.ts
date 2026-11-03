@@ -36,8 +36,6 @@ export type ClipJobInput = {
   duration: number
   removeSubtitles: boolean
   addSubtitles: boolean
-  /** 登录邮箱，用来把这次消费记到对应账户下。 */
-  email?: string
   /** 用户看到的来源名（链接本身或上传的文件名），账户页用它标明片子是从哪剪的。 */
   sourceName?: string
 }

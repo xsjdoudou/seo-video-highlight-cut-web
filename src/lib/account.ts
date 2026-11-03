@@ -72,12 +72,12 @@ async function getJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export function fetchAccount(email: string): Promise<AccountView> {
-  return getJson<AccountView>(`/api/account?email=${encodeURIComponent(email)}`)
+export function fetchAccount(): Promise<AccountView> {
+  return getJson<AccountView>('/api/account')
 }
 
-export async function fetchAssets(email: string): Promise<Asset[]> {
-  const data = await getJson<{ assets?: Asset[] }>(`/api/assets?email=${encodeURIComponent(email)}`)
+export async function fetchAssets(): Promise<Asset[]> {
+  const data = await getJson<{ assets?: Asset[] }>('/api/assets')
   return Array.isArray(data.assets) ? data.assets : []
 }
 

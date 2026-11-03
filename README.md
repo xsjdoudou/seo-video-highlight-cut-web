@@ -15,6 +15,14 @@ AWS 只暴露网站和 Worker relay API。阿里云 Worker 由 `gg --noudp` 启�
 `AWS_RELAY_URL` 建立出站 HTTPS 连接，领取任务后调用本机 SEO 服务，并回传进度和结果。
 因此阿里云安全组不需要开放 `10080`，AWS 生产配置也不应设置 `SEO_URL`。
 
+### 用户认证
+
+登录使用服务端邮箱 + 密码认证：密码以 `scrypt` 哈希保存，登录态使用
+HttpOnly Cookie，账户、剪辑和支付接口都从服务端会话确定用户身份。生产 HTTPS
+会自动启用 Secure Cookie；也可以在服务器环境中显式设置 `AUTH_COOKIE_SECURE=true`。
+
+当前未接入 Google、Facebook 或邮箱验证码服务；页面只展示实际可用的邮箱登录。
+
 ### 生产部署
 
 AWS `/etc/seo-video-highlight/web.env` 至少设置：

@@ -55,7 +55,8 @@ export default function PricingPage({ onBack }: { onBack: () => void }) {
       const response = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: current.email, planId }),
+        credentials: 'same-origin',
+        body: JSON.stringify({ planId }),
       })
       const data = (await response.json().catch(() => ({}))) as { checkoutUrl?: string; error?: string }
       if (!response.ok || !data.checkoutUrl) throw new Error(data.error || 'Checkout could not be started.')

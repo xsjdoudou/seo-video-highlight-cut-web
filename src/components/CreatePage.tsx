@@ -145,7 +145,6 @@ export default function CreatePage({
         duration: info.duration ?? 0,
         removeSubtitles: stripSubtitles,
         addSubtitles: burnSubtitles,
-        email: session.email,
         sourceName: job.kind === 'link' ? job.url.trim() : job.file.name,
       })
 

@@ -6,7 +6,9 @@
 //   GET  /uploads/<name>    把落盘的文件（和加好字幕的成片）发出去，支持 Range
 //   POST /api/clip          建任务，立刻返回 jobId；真正的流水线在后台跑
 //   GET  /api/clip/<jobId>  轮询状态 / 进度 / 结果
-//   POST /api/session       登录后写用户档案，返回账户和余额
+//   POST /api/auth/register 注册邮箱密码账户并建立会话
+//   POST /api/auth/login    校验邮箱密码并建立会话
+//   GET  /api/auth/me       返回当前会话账户
 //   GET  /api/account       读某个邮箱的余额和流水
 //   GET  /api/assets        读某个邮箱剪出来的全部成片
 //   GET  /api/billing/plans  返回公开的 Waffo 套餐配置
@@ -56,12 +58,16 @@ import {
   addAssets,
   addConsumption,
   addPaymentRecharge,
+  authenticateUser,
   creditsForSeconds,
+  createSession,
   describeStore,
+  deleteSession,
   findUserByEmail,
   getAccount,
+  registerUser,
   listAssetsByEmail,
-  upsertUser,
+  userForSession,
 } from './store.mjs'
 import { env } from './env.mjs'
 import {
@@ -99,6 +105,9 @@ const DESUB_TOKEN = env('DESUB_TOKEN', '')
 const UPLOAD_DIR = path.resolve(env('UPLOAD_DIR', path.join(REPO_ROOT, '.uploads')))
 const WORKER_TOKEN = env('WORKER_TOKEN', '').trim()
 const WORKER_POLL_MAX_WAIT_MS = Math.min(30_000, Math.max(1_000, Number(env('WORKER_POLL_MAX_WAIT_MS', 25_000))))
+const AUTH_COOKIE_NAME = 'vh_session'
+const AUTH_COOKIE_SECURE = env('AUTH_COOKIE_SECURE', PUBLIC_BASE.startsWith('https:') ? 'true' : 'false').toLowerCase() === 'true'
+const AUTH_COOKIE_MAX_AGE = Math.max(60 * 60, Math.floor(Number(env('AUTH_SESSION_TTL_MS', 30 * 24 * 60 * 60 * 1000)) / 1000))
 
 // Waffo credentials stay server-side. Product ids and credits are configured
 // together so the browser can choose a plan but can never choose its credit amount.
@@ -265,12 +274,13 @@ function ensureRelay() {
 
 // ---------------------------------------------------------------- HTTP 小工具
 
-function sendJson(res, status, body) {
+function sendJson(res, status, body, extraHeaders = {}) {
   const payload = JSON.stringify(body)
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(payload),
     'Cache-Control': 'no-store',
+    ...extraHeaders,
   })
   res.end(payload)
 }
@@ -464,6 +474,7 @@ function storedName(originalName) {
 }
 
 async function handleUpload(req, res) {
+  await requireUser(req)
   await fsp.mkdir(UPLOAD_DIR, { recursive: true })
   pruneUploads()
 
@@ -1179,8 +1190,89 @@ function isUploadedVideoUrl(input) {
   return source.origin === base.origin && source.pathname.startsWith('/uploads/')
 }
 
+function publicUser(user) {
+  if (!user) return null
+  const { passwordHash, ...safe } = user
+  return safe
+}
+
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value ?? '').trim())
+}
+
+function cookieValue(req, name) {
+  const cookies = String(req.headers.cookie || '').split(';')
+  for (const item of cookies) {
+    const separator = item.indexOf('=')
+    if (separator < 0) continue
+    const key = item.slice(0, separator).trim()
+    if (key === name) return decodeURIComponent(item.slice(separator + 1).trim())
+  }
+  return ''
+}
+
+function sessionCookie(token) {
+  const secure = AUTH_COOKIE_SECURE ? '; Secure' : ''
+  return `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE}${secure}`
+}
+
+function expiredSessionCookie() {
+  return `${AUTH_COOKIE_NAME}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`
+}
+
+async function authenticatedUser(req) {
+  return userForSession(cookieValue(req, AUTH_COOKIE_NAME))
+}
+
+async function requireUser(req) {
+  const user = await authenticatedUser(req)
+  if (!user || user.demo || !user.passwordHash) throw new ApiError('Please log in to continue.', 401)
+  return user
+}
+
+function validateCredentials(email, password) {
+  const address = String(email ?? '').trim().toLowerCase()
+  const secret = String(password ?? '')
+  if (!validEmail(address)) throw new ApiError('Enter a valid email address.')
+  if (secret.length < 8 || secret.length > 200) {
+    throw new ApiError('Your password must be between 8 and 200 characters.')
+  }
+  return { email: address, password: secret }
+}
+
+async function handleRegister(req, res) {
+  const body = await readJsonBody(req, 64 * 1024)
+  const credentials = validateCredentials(body.email, body.password)
+  const name = String(body.name ?? '').trim().slice(0, 80)
+  const result = await registerUser({ ...credentials, name })
+  if (!result.created) throw new ApiError('An account with this email already exists. Log in instead.', 409)
+  const session = await createSession(result.user)
+  sendJson(res, 201, { user: publicUser(result.user) }, { 'Set-Cookie': sessionCookie(session.token) })
+}
+
+async function handleLogin(req, res) {
+  const body = await readJsonBody(req, 64 * 1024)
+  const credentials = validateCredentials(body.email, body.password)
+  const user = await authenticateUser(credentials)
+  if (!user || user.demo || !user.passwordHash) throw new ApiError('Email or password is incorrect.', 401)
+  const session = await createSession(user)
+  sendJson(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(session.token) })
+}
+
+async function handleMe(req, res) {
+  const user = await authenticatedUser(req)
+  sendJson(res, 200, { user: publicUser(user) })
+}
+
+async function handleLogout(req, res) {
+  const token = cookieValue(req, AUTH_COOKIE_NAME)
+  if (token) await deleteSession(token)
+  sendJson(res, 200, { signedOut: true }, { 'Set-Cookie': expiredSessionCookie() })
+}
+
 async function handleCreateJob(req, res) {
   if (!WORKER_TOKEN) throw new ApiError('Video processing is not configured yet. Please try again later.', 503)
+  const user = await requireUser(req)
   const body = await readJsonBody(req)
   const videoUrl = String(body.videoUrl ?? '').trim()
   if (!isYouTubeVideoUrl(videoUrl) && !isUploadedVideoUrl(videoUrl)) {
@@ -1188,7 +1280,7 @@ async function handleCreateJob(req, res) {
   }
   const job = await createJob({
     videoUrl,
-    email: String(body.email ?? '').trim(),
+    email: user.email,
     // 落盘后的 URL 认不出用户当初选的是哪个文件，账户页要显示来源就得前端带上。
     sourceName: String(body.sourceName ?? '').trim().slice(0, 200),
     duration: Number(body.duration) || 0,
@@ -1200,32 +1292,16 @@ async function handleCreateJob(req, res) {
 
 // ------------------------------------------------------------ 账户相关接口
 
-async function handleSession(req, res) {
-  const body = await readJsonBody(req, 64 * 1024)
-  const email = String(body.email ?? '').trim()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new ApiError('email 格式不对')
-
-  const { user, created } = await upsertUser({
-    email,
-    name: String(body.name ?? '').trim(),
-    provider: String(body.provider ?? 'email').trim(),
-    demo: body.demo !== false,
-  })
+async function handleAccount(req, res) {
+  const user = await requireUser(req)
   const account = await getAccount(user.email)
-  sendJson(res, 200, { user, created, balance: account.balance })
-}
-
-async function handleAccount(req, res, url) {
-  const email = String(url.searchParams.get('email') ?? '').trim()
-  if (!email) throw new ApiError('缺少 email 参数')
-  sendJson(res, 200, await getAccount(email))
+  sendJson(res, 200, { ...account, user: publicUser(account.user) })
 }
 
 /** 账户页的「我的成片」：这个邮箱剪出来的全部片段，新的在前。 */
-async function handleAssets(req, res, url) {
-  const email = String(url.searchParams.get('email') ?? '').trim()
-  if (!email) throw new ApiError('缺少 email 参数')
-  const assets = await listAssetsByEmail(email)
+async function handleAssets(req, res) {
+  const user = await requireUser(req)
+  const assets = await listAssetsByEmail(user.email)
   sendJson(res, 200, { assets, total: assets.length })
 }
 
@@ -1276,14 +1352,11 @@ async function handleBillingPlans(req, res) {
 
 async function handleBillingCheckout(req, res) {
   const body = await readJsonBody(req, 64 * 1024)
-  const email = String(body.email ?? '').trim().toLowerCase()
+  const user = await requireUser(req)
+  const email = user.email
   const plan = findBillingPlan(body.planId)
   if (!waffoConfigured()) throw new ApiError('Payments are not configured yet. Please try again later.', 503)
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new ApiError('Please sign in before buying credits.')
   if (!plan?.productId) throw new ApiError('That credit package is not available yet.', 503)
-
-  const user = await findUserByEmail(email)
-  if (!user) throw new ApiError('Please sign in before buying credits.', 401)
 
   const pathName = '/v1/actions/checkout/create-session'
   const result = await waffoRequest(pathName, {
@@ -1398,16 +1471,21 @@ export function createClipApi() {
         const jobId = pathname.slice('/api/worker/jobs/'.length, -'/events'.length)
         return handleWorkerEvent(req, res, jobId)
       }
+      if (pathname === '/api/auth/register' && req.method === 'POST') return handleRegister(req, res)
+      if (pathname === '/api/auth/login' && req.method === 'POST') return handleLogin(req, res)
+      if (pathname === '/api/auth/me' && req.method === 'GET') return handleMe(req, res)
+      if (pathname === '/api/auth/logout' && req.method === 'POST') return handleLogout(req, res)
       if (pathname === '/api/clip' && req.method === 'POST') return handleCreateJob(req, res)
-      if (pathname === '/api/session' && req.method === 'POST') return handleSession(req, res)
-      if (pathname === '/api/account' && req.method === 'GET') return handleAccount(req, res, url)
-      if (pathname === '/api/assets' && req.method === 'GET') return handleAssets(req, res, url)
+      if (pathname === '/api/account' && req.method === 'GET') return handleAccount(req, res)
+      if (pathname === '/api/assets' && req.method === 'GET') return handleAssets(req, res)
       if (pathname === '/api/billing/plans' && req.method === 'GET') return handleBillingPlans(req, res)
       if (pathname === '/api/billing/checkout' && req.method === 'POST') return handleBillingCheckout(req, res)
       if (pathname === '/api/webhooks/waffo' && req.method === 'POST') return handleWaffoWebhook(req, res)
       if (pathname.startsWith('/api/clip/') && req.method === 'GET') {
         const job = await getRelayJob(pathname.slice('/api/clip/'.length))
         if (!job) throw new ApiError('This job has expired. Please run it again.', 404)
+        const user = await requireUser(req)
+        if (job.input?.email !== user.email) throw new ApiError('You cannot access this job.', 403)
         return sendJson(res, 200, jobView(job))
       }
       if (pathname.startsWith('/uploads/') && (req.method === 'GET' || req.method === 'HEAD')) {

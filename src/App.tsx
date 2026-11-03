@@ -16,9 +16,8 @@ const PRICING_PATH = '/pricing'
 export default function App() {
   const [activeClip, setActiveClip] = useState<Clip | null>(null)
   const [job, setJob] = useState<JobInput | null>(null)
-  const accountDemo = new URLSearchParams(window.location.search).get('account-demo') === 'aya'
   // 账户页的数据全从接口来，刷新和深链都能直接打开，不像 /create 那样依赖内存里的 job。
-  const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH || accountDemo)
+  const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH)
   const [pricing, setPricing] = useState(() => window.location.pathname === PRICING_PATH)
 
   // The job only lives in memory, so a reload or a deep link to /create has
@@ -84,7 +83,7 @@ export default function App() {
 
   return (
     <>
-      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} onOpenPricing={openPricing} demoAccount={accountDemo} />
+      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} onOpenPricing={openPricing} />
       <main>
         {job ? (
           <CreatePage job={job} onRemove={leave} onOpenClip={setActiveClip} />
@@ -96,7 +95,6 @@ export default function App() {
             onStart={leaveAccount}
             onOpenClip={setActiveClip}
             onOpenPricing={openPricing}
-            demo={accountDemo}
           />
         ) : (
           <>
