@@ -17,11 +17,21 @@ AWS 只暴露网站和 Worker relay API。阿里云 Worker 由 `gg --noudp` 启�
 
 ### 用户认证
 
-登录使用服务端邮箱 + 密码认证：密码以 `scrypt` 哈希保存，登录态使用
-HttpOnly Cookie，账户、剪辑和支付接口都从服务端会话确定用户身份。生产 HTTPS
-会自动启用 Secure Cookie；也可以在服务器环境中显式设置 `AUTH_COOKIE_SECURE=true`。
+登录支持服务端邮箱 + 密码和 Google OAuth：密码以 `scrypt` 哈希保存，Google 回调
+会按已验证邮箱创建或更新本地账户。两种方式都使用同一枚 HttpOnly Cookie，账户、剪辑
+和支付接口都从服务端会话确定用户身份。生产 HTTPS 会自动启用 Secure Cookie；也可以
+在服务器环境中显式设置 `AUTH_COOKIE_SECURE=true`。
 
-当前未接入 Google、Facebook 或邮箱验证码服务；页面只展示实际可用的邮箱登录。
+要启用 Google 登录，在 Google Cloud Console 创建 OAuth 2.0 Web client，并把生产回调地址
+加入 Authorized redirect URIs：
+
+```text
+https://video-highlight.com/api/auth/google/callback
+```
+
+然后在 `.env`/`web.env` 设置 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` 和
+`GOOGLE_REDIRECT_URI`。本地开发时回调地址可用 `http://localhost:10050/api/auth/google/callback`；
+Google 对 localhost 允许 HTTP，生产环境必须使用 HTTPS。
 
 ### 生产部署
 

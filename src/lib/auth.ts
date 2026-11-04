@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react'
 
-export type Provider = 'email'
+export type Provider = 'email' | 'google'
 
 export type Session = {
   id: string
@@ -12,7 +12,7 @@ export type Session = {
   demo: false
 }
 
-export const PROVIDER_LABEL: Record<Provider, string> = { email: 'Email' }
+export const PROVIDER_LABEL: Record<Provider, string> = { email: 'Email', google: 'Google' }
 
 let current: Session | null = null
 const listeners = new Set<() => void>()
@@ -42,7 +42,7 @@ function toSession(value: unknown): Session | null {
   if (!user.id || !user.email || !user.name) return null
   return {
     id: user.id,
-    provider: 'email',
+    provider: user.provider === 'google' ? 'google' : 'email',
     email: user.email,
     name: user.name,
     demo: false,
@@ -75,6 +75,10 @@ export async function signIn(mode: 'login' | 'register', email: string, password
   publish(session)
   void refreshBalance()
   return session
+}
+
+export function signInWithGoogle(): void {
+  window.location.assign('/api/auth/google')
 }
 
 export async function signOut(): Promise<void> {

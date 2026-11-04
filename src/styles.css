@@ -1736,11 +1736,34 @@ button {
   box-shadow: inset 0 0 0 1px #3a3b3b;
 }
 
+.auth__provider:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 /* 图标靠左，文字在整行里居中——和各家登录弹窗的排法一致。 */
 .auth__provider span {
   flex: 1;
   text-align: center;
   margin-right: 20px;
+}
+
+.auth__divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.auth__divider::before,
+.auth__divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--panel-border);
 }
 
 .auth__text-button {

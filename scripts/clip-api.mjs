@@ -8,6 +8,8 @@
 //   GET  /api/clip/<jobId>  轮询状态 / 进度 / 结果
 //   POST /api/auth/register 注册邮箱密码账户并建立会话
 //   POST /api/auth/login    校验邮箱密码并建立会话
+//   GET  /api/auth/google   跳转 Google OAuth
+//   GET  /api/auth/google/callback 处理 Google OAuth 回调并建立会话
 //   GET  /api/auth/me       返回当前会话账户
 //   GET  /api/account       读某个邮箱的余额和流水
 //   GET  /api/assets        读某个邮箱剪出来的全部成片
@@ -67,6 +69,7 @@ import {
   getAccount,
   registerUser,
   listAssetsByEmail,
+  upsertUser,
   userForSession,
 } from './store.mjs'
 import { env } from './env.mjs'
@@ -108,6 +111,11 @@ const WORKER_POLL_MAX_WAIT_MS = Math.min(30_000, Math.max(1_000, Number(env('WOR
 const AUTH_COOKIE_NAME = 'vh_session'
 const AUTH_COOKIE_SECURE = env('AUTH_COOKIE_SECURE', PUBLIC_BASE.startsWith('https:') ? 'true' : 'false').toLowerCase() === 'true'
 const AUTH_COOKIE_MAX_AGE = Math.max(60 * 60, Math.floor(Number(env('AUTH_SESSION_TTL_MS', 30 * 24 * 60 * 60 * 1000)) / 1000))
+const GOOGLE_CLIENT_ID = env('GOOGLE_CLIENT_ID', '').trim()
+const GOOGLE_CLIENT_SECRET = env('GOOGLE_CLIENT_SECRET', '').trim()
+const GOOGLE_REDIRECT_URI = env('GOOGLE_REDIRECT_URI', `${PUBLIC_BASE}/api/auth/google/callback`).trim()
+const GOOGLE_STATE_COOKIE = 'vh_google_state'
+const GOOGLE_STATE_MAX_AGE = 10 * 60
 
 // Waffo credentials stay server-side. Product ids and credits are configured
 // together so the browser can choose a plan but can never choose its credit amount.
@@ -1211,9 +1219,27 @@ function cookieValue(req, name) {
   return ''
 }
 
+function redirect(res, location, extraHeaders = {}) {
+  res.writeHead(302, {
+    Location: location,
+    'Cache-Control': 'no-store',
+    ...extraHeaders,
+  })
+  res.end()
+}
+
 function sessionCookie(token) {
   const secure = AUTH_COOKIE_SECURE ? '; Secure' : ''
   return `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE}${secure}`
+}
+
+function googleStateCookie(state) {
+  const secure = AUTH_COOKIE_SECURE ? '; Secure' : ''
+  return `${GOOGLE_STATE_COOKIE}=${encodeURIComponent(state)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${GOOGLE_STATE_MAX_AGE}${secure}`
+}
+
+function expiredGoogleStateCookie() {
+  return `${GOOGLE_STATE_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`
 }
 
 function expiredSessionCookie() {
@@ -1226,7 +1252,7 @@ async function authenticatedUser(req) {
 
 async function requireUser(req) {
   const user = await authenticatedUser(req)
-  if (!user || user.demo || !user.passwordHash) throw new ApiError('Please log in to continue.', 401)
+  if (!user || user.demo) throw new ApiError('Please log in to continue.', 401)
   return user
 }
 
@@ -1257,6 +1283,82 @@ async function handleLogin(req, res) {
   if (!user || user.demo || !user.passwordHash) throw new ApiError('Email or password is incorrect.', 401)
   const session = await createSession(user)
   sendJson(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(session.token) })
+}
+
+function googleConfigured() {
+  return Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI)
+}
+
+function googleErrorRedirect(res) {
+  redirect(res, '/?auth_error=google', { 'Set-Cookie': expiredGoogleStateCookie() })
+}
+
+async function handleGoogleStart(req, res) {
+  if (!googleConfigured()) throw new ApiError('Google sign-in is not configured yet.', 503)
+
+  const state = crypto.randomBytes(32).toString('base64url')
+  const authorization = new URL('https://accounts.google.com/o/oauth2/v2/auth')
+  authorization.searchParams.set('client_id', GOOGLE_CLIENT_ID)
+  authorization.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI)
+  authorization.searchParams.set('response_type', 'code')
+  authorization.searchParams.set('scope', 'openid email profile')
+  authorization.searchParams.set('state', state)
+  authorization.searchParams.set('prompt', 'select_account')
+  redirect(res, authorization.toString(), { 'Set-Cookie': googleStateCookie(state) })
+}
+
+async function googleTokenRequest(code) {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      grant_type: 'authorization_code',
+    }),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || !data.access_token) throw new ApiError('Google token exchange failed.', 502)
+  return data.access_token
+}
+
+async function googleUserInfo(accessToken) {
+  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const data = await response.json().catch(() => ({}))
+  const email = String(data.email || '').trim().toLowerCase()
+  if (!response.ok || !validEmail(email) || data.email_verified !== true) {
+    throw new ApiError('Google did not return a verified email address.', 502)
+  }
+  return {
+    email,
+    name: String(data.name || data.given_name || email.split('@')[0]).trim().slice(0, 80),
+  }
+}
+
+async function handleGoogleCallback(req, res, url) {
+  const state = String(url.searchParams.get('state') || '')
+  const savedState = cookieValue(req, GOOGLE_STATE_COOKIE)
+  const code = String(url.searchParams.get('code') || '')
+  if (!state || !savedState || state !== savedState || !code) return googleErrorRedirect(res)
+  if (url.searchParams.get('error')) return googleErrorRedirect(res)
+
+  try {
+    const accessToken = await googleTokenRequest(code)
+    const profile = await googleUserInfo(accessToken)
+    const result = await upsertUser({ ...profile, provider: 'google', demo: false })
+    const session = await createSession(result.user)
+    redirect(res, '/', {
+      'Set-Cookie': [sessionCookie(session.token), expiredGoogleStateCookie()],
+    })
+  } catch (error) {
+    if (error instanceof ApiError) console.error('[clip-api] Google sign-in:', error.message)
+    else console.error('[clip-api] Google sign-in:', error)
+    googleErrorRedirect(res)
+  }
 }
 
 async function handleMe(req, res) {
@@ -1473,6 +1575,8 @@ export function createClipApi() {
       }
       if (pathname === '/api/auth/register' && req.method === 'POST') return handleRegister(req, res)
       if (pathname === '/api/auth/login' && req.method === 'POST') return handleLogin(req, res)
+      if (pathname === '/api/auth/google' && req.method === 'GET') return handleGoogleStart(req, res)
+      if (pathname === '/api/auth/google/callback' && req.method === 'GET') return handleGoogleCallback(req, res, url)
       if (pathname === '/api/auth/me' && req.method === 'GET') return handleMe(req, res)
       if (pathname === '/api/auth/logout' && req.method === 'POST') return handleLogout(req, res)
       if (pathname === '/api/clip' && req.method === 'POST') return handleCreateJob(req, res)

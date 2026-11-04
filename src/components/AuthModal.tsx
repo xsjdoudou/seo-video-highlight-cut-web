@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { isValidEmail, signIn } from '../lib/auth'
+import { isValidEmail, signIn, signInWithGoogle } from '../lib/auth'
+import { GoogleIcon } from './icons'
 
 /** Real account registration and login backed by the server. */
 export default function AuthModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -10,6 +11,7 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [googleBusy, setGoogleBusy] = useState(false)
   const panel = useRef<HTMLDivElement>(null)
   const emailInput = useRef<HTMLInputElement>(null)
 
@@ -61,6 +63,12 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
     setError('')
   }
 
+  const continueWithGoogle = () => {
+    setError('')
+    setGoogleBusy(true)
+    signInWithGoogle()
+  }
+
   return createPortal(
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={onClose}>
       <div className="auth" ref={panel} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
@@ -74,6 +82,15 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
         <p className="auth__lede">
           {mode === 'login' ? 'Use your email and password to continue.' : 'Create an account to save your clips and credits.'}
         </p>
+
+        <button type="button" className="auth__provider" onClick={continueWithGoogle} disabled={busy || googleBusy}>
+          <GoogleIcon />
+          <span>{googleBusy ? 'Connecting…' : 'Continue with Google'}</span>
+        </button>
+
+        <div className="auth__divider" aria-hidden="true">
+          <span>or continue with email</span>
+        </div>
 
         <form className="auth__form" onSubmit={submit}>
           {mode === 'register' && (
