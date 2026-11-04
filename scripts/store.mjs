@@ -15,7 +15,7 @@
 //
 // 环境变量：
 //   DATA_DIR               数据目录      默认 <repo>/data
-//   SIGNUP_BONUS_CREDITS   注册赠送积分  默认 100（设 0 就不送）
+//   SIGNUP_BONUS_CREDITS   注册赠送积分  默认 20（设 0 就不送）
 //   AUTH_SESSION_TTL_MS    登录会话时长  默认 30 天
 
 import crypto from 'node:crypto'
@@ -31,7 +31,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 // env() 而不是 `??`：留空的 .env 行会让 `??` 的默认值失效，见 scripts/env.mjs。
 // 这两项尤其不能变空——DATA_DIR='' 会把数据目录解析成当前工作目录。
 export const DATA_DIR = path.resolve(env('DATA_DIR', path.join(REPO_ROOT, 'data')))
-export const SIGNUP_BONUS_CREDITS = Math.max(0, Number(env('SIGNUP_BONUS_CREDITS', 100)))
+export const SIGNUP_BONUS_CREDITS = Math.max(0, Number(env('SIGNUP_BONUS_CREDITS', 20)))
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const RECHARGES_FILE = path.join(DATA_DIR, 'recharges.jsonl')
