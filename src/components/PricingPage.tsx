@@ -12,9 +12,9 @@ type BillingPlan = {
 }
 
 const DEFAULT_PLANS: BillingPlan[] = [
-  { id: 'starter', name: 'Starter', credits: 100, price: '9.00', currency: 'USD', available: true },
-  { id: 'creator', name: 'Creator', credits: 500, price: '29.00', currency: 'USD', available: true },
-  { id: 'studio', name: 'Studio', credits: 1200, price: '59.00', currency: 'USD', available: true },
+  { id: 'starter', name: 'Starter', credits: 100, price: '7.99', currency: 'USD', available: true },
+  { id: 'creator', name: 'Creator', credits: 500, price: '27.99', currency: 'USD', available: true },
+  { id: 'studio', name: 'Studio', credits: 1200, price: '57.99', currency: 'USD', available: true },
 ]
 
 const PLAN_DETAILS: Record<string, string> = {

@@ -137,9 +137,9 @@ export default function LegalPage({ kind, onBack }: LegalPageProps) {
       <h2>4. Credits and pricing</h2>
       <p>Video Highlight currently sells one-time credit packs. The checkout page shows the applicable price and credit amount before payment:</p>
       <ul>
-        <li>Starter: 100 credits for $9 USD.</li>
-        <li>Creator: 500 credits for $29 USD.</li>
-        <li>Studio: 1,200 credits for $59 USD.</li>
+        <li>Starter: 100 credits for $7.99 USD.</li>
+        <li>Creator: 500 credits for $27.99 USD.</li>
+        <li>Studio: 1,200 credits for $57.99 USD.</li>
       </ul>
       <p>Credits are not a subscription, do not renew automatically, and are applied only after payment is confirmed by Waffo Pancake. We may change future pricing, but an already completed purchase is not repriced.</p>
 
