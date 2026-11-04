@@ -2,21 +2,7 @@ import { useState } from 'react'
 import { signOut, useBalance, useSession } from '../lib/auth'
 import AuthModal from './AuthModal'
 
-const NAV_ITEMS = [
-  { label: 'Features', dropdown: true },
-  { label: 'Solutions', dropdown: true },
-  { label: 'Resources', dropdown: true },
-  { label: 'Pricing' },
-  { label: 'For business' },
-]
-
-function Chevron() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-      <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  )
-}
+const NAV_ITEMS = [{ label: 'Pricing', path: '/pricing' }]
 
 export default function Navbar({
   accountPath,
@@ -42,17 +28,15 @@ export default function Navbar({
           {NAV_ITEMS.map((item) => (
             <a
               key={item.label}
-              href={item.label === 'Pricing' ? '/pricing' : '#'}
+              href={item.path}
               className="navbar__link"
               onClick={(event) => {
-                if (item.label !== 'Pricing') return
                 if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
                 event.preventDefault()
                 onOpenPricing()
               }}
             >
               {item.label}
-              {item.dropdown && <Chevron />}
             </a>
           ))}
         </nav>

@@ -11,10 +11,21 @@ type BillingPlan = {
   available: boolean
 }
 
+const DEFAULT_PLANS: BillingPlan[] = [
+  { id: 'starter', name: 'Starter', credits: 100, price: '9.00', currency: 'USD', available: true },
+  { id: 'creator', name: 'Creator', credits: 500, price: '29.00', currency: 'USD', available: true },
+  { id: 'studio', name: 'Studio', credits: 1200, price: '59.00', currency: 'USD', available: true },
+]
+
+const PLAN_DETAILS: Record<string, string> = {
+  starter: 'For occasional projects and short-form experiments.',
+  creator: 'For recurring podcast, interview, and creator workflows.',
+  studio: 'For teams producing highlights at a larger weekly volume.',
+}
+
 export default function PricingPage({ onBack }: { onBack: () => void }) {
   const session = useSession()
-  const [plans, setPlans] = useState<BillingPlan[]>([])
-  const [configured, setConfigured] = useState(false)
+  const [plans, setPlans] = useState<BillingPlan[]>(DEFAULT_PLANS)
   const [loading, setLoading] = useState(true)
   const [buying, setBuying] = useState('')
   const [error, setError] = useState('')
@@ -28,10 +39,9 @@ export default function PricingPage({ onBack }: { onBack: () => void }) {
         return response.json() as Promise<{ configured?: boolean; plans?: BillingPlan[] }>
       })
       .then((data) => {
-        setConfigured(Boolean(data.configured))
-        setPlans(Array.isArray(data.plans) ? data.plans : [])
+        if (Array.isArray(data.plans) && data.plans.length > 0) setPlans(data.plans)
       })
-      .catch(() => setError('We could not load the credit packages. Please try again.'))
+      .catch(() => setError('Live checkout status could not be verified. The published packages are shown below.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -77,14 +87,11 @@ export default function PricingPage({ onBack }: { onBack: () => void }) {
       <header className="pricing__header">
         <p className="results-page__eyebrow">Credit packs</p>
         <h1 id="pricing-heading">Keep your clips moving.</h1>
-        <p>Buy credits once and use them whenever you need new highlights.</p>
+        <p>Buy credits once and use them whenever you need new highlights. Every pack is a one-time purchase: no subscription and no automatic renewal.</p>
       </header>
 
       {loading && <p className="pricing__message">Loading packages…</p>}
       {error && <p className="pricing__message pricing__message--error" role="alert">{error}</p>}
-      {!loading && !configured && (
-        <p className="pricing__message">Payments are being configured. Please check back soon.</p>
-      )}
 
       <div className="pricing__grid">
         {plans.map((plan, index) => (
@@ -93,6 +100,8 @@ export default function PricingPage({ onBack }: { onBack: () => void }) {
             <h2>{plan.name}</h2>
             <p className="pricing__credits"><strong>{plan.credits.toLocaleString()}</strong> credits</p>
             <p className="pricing__price"><strong>{plan.currency} {plan.price}</strong><span> one time</span></p>
+            <p className="pricing__description">{PLAN_DETAILS[plan.id] || 'Use these credits for AI video highlight processing.'}</p>
+            <p className="pricing__minutes">About {Math.floor(plan.credits / 2).toLocaleString()} minutes of source video</p>
             <button
               type="button"
               className={`btn ${index === 1 ? 'btn--light' : 'btn--outline'} pricing__button`}
@@ -105,7 +114,11 @@ export default function PricingPage({ onBack }: { onBack: () => void }) {
         ))}
       </div>
 
-      <p className="pricing__fineprint">Secure checkout powered by Waffo. Credits are added after payment is confirmed.</p>
+      <div className="pricing__terms">
+        <strong>How credits work</strong>
+        <p>2 credits = 1 minute of source video. Credits are used for processing and are added after payment is confirmed.</p>
+        <p>All packages are one-time purchases, not subscriptions, and do not renew automatically. Secure checkout is powered by Waffo.</p>
+      </div>
 
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onDone={() => setAuthOpen(false)} />}
     </section>

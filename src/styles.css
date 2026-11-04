@@ -1563,6 +1563,21 @@ button {
   font-size: 12px;
 }
 
+.pricing__description {
+  min-height: 44px;
+  margin: 18px 0 0;
+  color: #c7c7c7;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.pricing__minutes {
+  margin: 10px 0 20px;
+  color: var(--lime);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .pricing__button {
   width: 100%;
   margin-top: auto;
@@ -1584,11 +1599,23 @@ button {
   color: #ffb4b4;
 }
 
-.pricing__fineprint {
-  margin: 22px auto 0;
-  color: #666;
-  font-size: 12px;
-  text-align: center;
+.pricing__terms {
+  max-width: 1120px;
+  margin: 28px auto 0;
+  padding: 20px 22px;
+  border-top: 1px solid #252525;
+  color: #9d9d9d;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pricing__terms strong {
+  color: #f2f2f2;
+  font-size: 14px;
+}
+
+.pricing__terms p {
+  margin: 6px 0 0;
 }
 
 .account {
