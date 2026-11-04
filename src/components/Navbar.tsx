@@ -2,20 +2,31 @@ import { useState } from 'react'
 import { signOut, useBalance, useSession } from '../lib/auth'
 import AuthModal from './AuthModal'
 
-const NAV_ITEMS = [{ label: 'Pricing', path: '/pricing' }]
+const NAV_ITEMS = [
+  { label: 'How it works', path: '/how-it-works', action: 'how' },
+  { label: 'Pricing', path: '/pricing', action: 'pricing' },
+  { label: 'My Creations', path: '/creations', action: 'creations' },
+]
 
 export default function Navbar({
   accountPath,
   onOpenAccount,
+  onOpenHowItWorks,
   onOpenPricing,
+  onOpenCreations,
 }: {
   accountPath: string
   onOpenAccount: () => void
+  onOpenHowItWorks: () => void
   onOpenPricing: () => void
+  onOpenCreations: () => void
 }) {
   const session = useSession()
   const balance = useBalance()
   const [authOpen, setAuthOpen] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
+
+  const closeNav = () => setNavOpen(false)
 
   return (
     <header className="navbar">
@@ -24,7 +35,18 @@ export default function Navbar({
           <img src="/favicon.svg" alt="" width={28} height={28} />
           <span>Video Highlight</span>
         </a>
-        <nav className="navbar__links" aria-label="Main">
+        <button
+          type="button"
+          className="navbar__menu"
+          aria-label="Open navigation"
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        <nav className={`navbar__links${navOpen ? ' navbar__links--open' : ''}`} aria-label="Main">
           {NAV_ITEMS.map((item) => (
             <a
               key={item.label}
@@ -33,7 +55,10 @@ export default function Navbar({
               onClick={(event) => {
                 if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
                 event.preventDefault()
-                onOpenPricing()
+                closeNav()
+                if (item.action === 'how') onOpenHowItWorks()
+                else if (item.action === 'creations') onOpenCreations()
+                else onOpenPricing()
               }}
             >
               {item.label}

@@ -7,6 +7,7 @@ import AccountPage from './components/AccountPage'
 import PricingPage from './components/PricingPage'
 import ClipModal from './components/ClipModal'
 import LegalPage from './components/LegalPage'
+import HowItWorksPage from './components/HowItWorksPage'
 import type { Clip } from './data/clips'
 import type { JobInput } from './lib/videoSource'
 
@@ -15,6 +16,8 @@ const ACCOUNT_PATH = '/account'
 const PRICING_PATH = '/pricing'
 const TERMS_PATH = '/terms'
 const PRIVACY_PATH = '/privacy'
+const HOW_IT_WORKS_PATH = '/how-it-works'
+const CREATIONS_PATH = '/creations'
 
 export default function App() {
   const [activeClip, setActiveClip] = useState<Clip | null>(null)
@@ -22,6 +25,8 @@ export default function App() {
   // 账户页的数据全从接口来，刷新和深链都能直接打开，不像 /create 那样依赖内存里的 job。
   const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH)
   const [pricing, setPricing] = useState(() => window.location.pathname === PRICING_PATH)
+  const [howItWorks, setHowItWorks] = useState(() => window.location.pathname === HOW_IT_WORKS_PATH)
+  const [creations, setCreations] = useState(() => window.location.pathname === CREATIONS_PATH)
   const [legalPath, setLegalPath] = useState<'terms' | 'privacy' | null>(() => {
     if (window.location.pathname === TERMS_PATH) return 'terms'
     if (window.location.pathname === PRIVACY_PATH) return 'privacy'
@@ -44,6 +49,8 @@ export default function App() {
       const path = window.location.pathname
       setAccount(path === ACCOUNT_PATH)
       setPricing(path === PRICING_PATH)
+      setHowItWorks(path === HOW_IT_WORKS_PATH)
+      setCreations(path === CREATIONS_PATH)
       setLegalPath(path === TERMS_PATH ? 'terms' : path === PRIVACY_PATH ? 'privacy' : null)
       if (path !== CREATE_PATH) setJob(null)
       else if (!job) window.history.replaceState(null, '', '/')
@@ -55,6 +62,8 @@ export default function App() {
   const start = useCallback((input: JobInput) => {
     setAccount(false)
     setPricing(false)
+    setHowItWorks(false)
+    setCreations(false)
     setLegalPath(null)
     setJob(input)
     window.history.pushState(null, '', CREATE_PATH)
@@ -70,8 +79,32 @@ export default function App() {
     setJob(null)
     setAccount(true)
     setPricing(false)
+    setHowItWorks(false)
+    setCreations(false)
     setLegalPath(null)
     if (window.location.pathname !== ACCOUNT_PATH) window.history.pushState(null, '', ACCOUNT_PATH)
+    window.scrollTo(0, 0)
+  }, [])
+
+  const openHowItWorks = useCallback(() => {
+    setJob(null)
+    setAccount(false)
+    setPricing(false)
+    setHowItWorks(true)
+    setCreations(false)
+    setLegalPath(null)
+    if (window.location.pathname !== HOW_IT_WORKS_PATH) window.history.pushState(null, '', HOW_IT_WORKS_PATH)
+    window.scrollTo(0, 0)
+  }, [])
+
+  const openCreations = useCallback(() => {
+    setJob(null)
+    setAccount(false)
+    setPricing(false)
+    setHowItWorks(false)
+    setCreations(true)
+    setLegalPath(null)
+    if (window.location.pathname !== CREATIONS_PATH) window.history.pushState(null, '', CREATIONS_PATH)
     window.scrollTo(0, 0)
   }, [])
 
@@ -79,6 +112,8 @@ export default function App() {
     setJob(null)
     setAccount(false)
     setPricing(true)
+    setHowItWorks(false)
+    setCreations(false)
     setLegalPath(null)
     if (window.location.pathname !== PRICING_PATH) window.history.pushState(null, '', PRICING_PATH)
     window.scrollTo(0, 0)
@@ -88,20 +123,38 @@ export default function App() {
   const leaveAccount = useCallback(() => {
     setAccount(false)
     setPricing(false)
+    setHowItWorks(false)
+    setCreations(false)
     setLegalPath(null)
-    if ([ACCOUNT_PATH, PRICING_PATH, TERMS_PATH, PRIVACY_PATH].includes(window.location.pathname)) {
+    if ([ACCOUNT_PATH, PRICING_PATH, HOW_IT_WORKS_PATH, CREATIONS_PATH, TERMS_PATH, PRIVACY_PATH].includes(window.location.pathname)) {
       window.history.replaceState(null, '', '/')
     }
   }, [])
 
   return (
     <>
-      <Navbar accountPath={ACCOUNT_PATH} onOpenAccount={openAccount} onOpenPricing={openPricing} />
+      <Navbar
+        accountPath={ACCOUNT_PATH}
+        onOpenAccount={openAccount}
+        onOpenHowItWorks={openHowItWorks}
+        onOpenPricing={openPricing}
+        onOpenCreations={openCreations}
+      />
       <main>
         {job ? (
           <CreatePage job={job} onRemove={leave} onOpenClip={setActiveClip} />
         ) : pricing ? (
           <PricingPage onBack={leaveAccount} />
+        ) : howItWorks ? (
+          <HowItWorksPage onBack={leaveAccount} onStart={leaveAccount} />
+        ) : creations ? (
+          <AccountPage
+            mode="creations"
+            onBack={leaveAccount}
+            onStart={leaveAccount}
+            onOpenClip={setActiveClip}
+            onOpenPricing={openPricing}
+          />
         ) : account ? (
           <AccountPage
             onBack={leaveAccount}

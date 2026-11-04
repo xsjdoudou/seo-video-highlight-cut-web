@@ -18,11 +18,13 @@ export default function AccountPage({
   onStart,
   onOpenClip,
   onOpenPricing,
+  mode = 'account',
 }: {
   onBack: () => void
   onStart: () => void
   onOpenClip: (clip: Clip) => void
   onOpenPricing: () => void
+  mode?: 'account' | 'creations'
 }) {
   const session = useSession()
   const [phase, setPhase] = useState<Phase>('loading')
@@ -52,6 +54,7 @@ export default function AccountPage({
   }, [session])
 
   const totalClips = groups.reduce((sum, group) => sum + group.clips.length, 0)
+  const creationsOnly = mode === 'creations'
 
   if (!session) {
     return (
@@ -80,10 +83,12 @@ export default function AccountPage({
       </div>
 
       <header className="results-page__header">
-        <p className="results-page__eyebrow">Your account</p>
-        <h1 id="account-heading">{account?.user?.name || session.name}</h1>
+        <p className="results-page__eyebrow">{creationsOnly ? 'Your creations' : 'Your account'}</p>
+        <h1 id="account-heading">{creationsOnly ? 'My creations' : account?.user?.name || session.name}</h1>
         <p className="results-page__intro">
-          Every clip you've generated lives here. Open any one of them to see the full evaluation again.
+          {creationsOnly
+            ? 'Every highlight you create is saved here, ready to review and download again.'
+            : "Every clip you've generated lives here. Open any one of them to see the full evaluation again."}
         </p>
         <button type="button" className="btn btn--light" onClick={onOpenPricing}>
           Buy credits
@@ -123,7 +128,7 @@ export default function AccountPage({
         <div className="results-page__empty">
           <span className="results-page__empty-mark">—</span>
           <h2>No clips yet</h2>
-          <p>Run your first video and the shorts you get back will show up here.</p>
+          <p>{creationsOnly ? 'Create your first video highlight and it will show up here.' : 'Run your first video and the shorts you get back will show up here.'}</p>
           <button type="button" className="btn btn--light" onClick={onStart}>
             Get clips in 1 click
           </button>

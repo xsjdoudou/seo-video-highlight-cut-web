@@ -153,6 +153,24 @@ button {
   gap: 4px;
 }
 
+.navbar__menu {
+  display: none;
+  width: 38px;
+  height: 38px;
+  padding: 9px;
+  border: 1px solid #2b2b2b;
+  border-radius: 8px;
+  background: #151616;
+}
+
+.navbar__menu span {
+  display: block;
+  height: 2px;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: #fff;
+}
+
 /* ---------- Hero ---------- */
 
 .hero {
@@ -1618,6 +1636,166 @@ button {
   margin: 6px 0 0;
 }
 
+/* ---------- How it works ---------- */
+
+.how-page {
+  width: min(100% - 56px, 1180px);
+  margin: 0 auto;
+  padding: 34px 0 100px;
+}
+
+.how-page__nav {
+  padding-bottom: 22px;
+  border-bottom: 1px solid #1d1d1d;
+}
+
+.how-page__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 430px);
+  align-items: center;
+  gap: clamp(44px, 8vw, 112px);
+  padding: 70px 0 94px;
+}
+
+.how-page__hero-copy h1 {
+  max-width: 680px;
+  margin: 12px 0 22px;
+  font-size: clamp(42px, 6vw, 74px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+
+.how-page__hero-copy h1 span {
+  color: var(--lime);
+}
+
+.how-page__hero-copy > p:not(.results-page__eyebrow) {
+  max-width: 580px;
+  margin: 0 0 30px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.how-page__preview {
+  position: relative;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid #343635;
+  border-radius: 18px;
+  background: #111313;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.how-page__preview::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.9));
+  content: '';
+  pointer-events: none;
+}
+
+.how-page__preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  object-fit: cover;
+}
+
+.how-page__preview-label {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  left: 22px;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+  color: #d8d8d8;
+  font-size: 12px;
+}
+
+.how-page__preview-label strong {
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.how-page__preview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 0 5px rgba(200, 255, 61, 0.12);
+}
+
+.how-page__steps {
+  padding: 66px 0 74px;
+  border-top: 1px solid #242525;
+}
+
+.how-page__section-heading h2,
+.how-page__promise h2 {
+  max-width: 680px;
+  margin: 12px 0 34px;
+  font-size: clamp(30px, 4vw, 48px);
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+
+.how-page__step-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.how-page__step {
+  min-height: 220px;
+  padding: 26px;
+  border: 1px solid #2a2b2b;
+  border-radius: 10px;
+  background: #151616;
+}
+
+.how-page__step-number {
+  color: var(--lime);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.how-page__step h3 {
+  margin: 46px 0 12px;
+  font-size: 21px;
+}
+
+.how-page__step p,
+.how-page__promise > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.how-page__promise {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 390px);
+  gap: 60px;
+  align-items: end;
+  padding: 54px 0 0;
+  border-top: 1px solid #242525;
+}
+
+.how-page__promise h2 {
+  margin-bottom: 0;
+}
+
+.how-page__promise > p {
+  padding-bottom: 6px;
+}
+
 .account {
   width: 100%;
   margin: 0 auto;
@@ -2330,8 +2508,31 @@ button {
 }
 
 @media (max-width: 900px) {
+  .navbar__menu {
+    display: block;
+    margin-left: auto;
+  }
+
   .navbar__links {
+    position: absolute;
+    top: calc(100% + 1px);
+    right: 0;
+    left: 0;
     display: none;
+    flex-direction: column;
+    gap: 0;
+    padding: 4px 20px 10px;
+    background: rgba(14, 14, 14, 0.98);
+    border-bottom: 1px solid #2a2b2b;
+  }
+
+  .navbar__links--open {
+    display: flex;
+  }
+
+  .navbar__link {
+    min-height: 46px;
+    border-top: 1px solid #242525;
   }
 
   .demo {
@@ -2368,6 +2569,39 @@ button {
     max-width: 520px;
   }
 
+  .how-page {
+    width: min(100% - 40px, 720px);
+    padding-bottom: 72px;
+  }
+
+  .how-page__hero {
+    grid-template-columns: 1fr;
+    gap: 42px;
+    padding: 52px 0 68px;
+  }
+
+  .how-page__preview,
+  .how-page__preview video {
+    min-height: 420px;
+  }
+
+  .how-page__step-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .how-page__step {
+    min-height: 0;
+  }
+
+  .how-page__step h3 {
+    margin-top: 30px;
+  }
+
+  .how-page__promise {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
   .results-page__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     /* 窄屏改成两列，保证视频和卡片文字仍然可读。 */
@@ -2384,6 +2618,26 @@ button {
 }
 
 @media (max-width: 640px) {
+  .navbar__inner {
+    padding: 0 16px;
+  }
+
+  .brand {
+    font-size: 15px;
+  }
+
+  .navbar__account-text {
+    display: none;
+  }
+
+  .navbar__actions {
+    gap: 0;
+  }
+
+  .navbar__actions .btn--ghost {
+    display: none;
+  }
+
   .hero {
     padding-top: 48px;
   }
@@ -2410,6 +2664,23 @@ button {
   .legal-page__header p:last-child,
   .legal-page__content {
     font-size: 15px;
+  }
+
+  .how-page {
+    width: calc(100% - 32px);
+  }
+
+  .how-page__hero-copy h1 {
+    font-size: 45px;
+  }
+
+  .how-page__hero-copy > p:not(.results-page__eyebrow) {
+    font-size: 16px;
+  }
+
+  .how-page__preview,
+  .how-page__preview video {
+    min-height: 380px;
   }
 
   .demo__or {
