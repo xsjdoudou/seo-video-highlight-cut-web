@@ -301,7 +301,7 @@ function sendJson(res, status, body, extraHeaders = {}) {
  * 以前这里写死不限时，是因为 /v1/seo 当年是同步接口，一跑几十分钟。现在它改成了
  * 提交 + 轮询，每个请求都该很快回来——真的卡住就是链路断了，早点报比吊着强。
  */
-function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0, extraHeaders = {} } = {}) {
+function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0, extraHeaders = {}, family } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url)
     const body = payload === undefined ? null : Buffer.from(JSON.stringify(payload), 'utf8')
@@ -314,7 +314,7 @@ function requestJson(url, payload, { token = '', method = 'POST', timeoutMs = 0,
     Object.assign(headers, extraHeaders)
 
     const transport = target.protocol === 'https:' ? https : http
-    const request = transport.request(target, { method, headers, timeout: timeoutMs }, (response) => {
+    const request = transport.request(target, { method, headers, timeout: timeoutMs, ...(family ? { family } : {}) }, (response) => {
       const chunks = []
       response.on('data', (chunk) => chunks.push(chunk))
       response.on('end', () => {
@@ -1195,7 +1195,7 @@ async function readYouTubeApiMetadata(videoId) {
   endpoint.searchParams.set('id', videoId)
   endpoint.searchParams.set('key', YOUTUBE_API_KEY)
   try {
-    const payload = await requestJson(endpoint.toString(), undefined, { method: 'GET', timeoutMs: 10_000 })
+    const payload = await requestJson(endpoint.toString(), undefined, { method: 'GET', timeoutMs: 10_000, family: 4 })
     const item = Array.isArray(payload.items) ? payload.items[0] : null
     const duration = parseYouTubeDuration(item?.contentDetails?.duration)
     if (!item || duration <= 0) return null
