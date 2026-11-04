@@ -116,6 +116,7 @@ const GOOGLE_CLIENT_SECRET = env('GOOGLE_CLIENT_SECRET', '').trim()
 const GOOGLE_REDIRECT_URI = env('GOOGLE_REDIRECT_URI', `${PUBLIC_BASE}/api/auth/google/callback`).trim()
 const GOOGLE_STATE_COOKIE = 'vh_google_state'
 const GOOGLE_STATE_MAX_AGE = 10 * 60
+const YOUTUBE_API_KEY = env('YOUTUBE_API_KEY', '').trim()
 
 // Waffo credentials stay server-side. Product ids and credits are configured
 // together so the browser can choose a plan but can never choose its credit amount.
@@ -1181,11 +1182,52 @@ function sourceInfoView(job) {
   }
 }
 
+function parseYouTubeDuration(value) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(String(value || ''))
+  if (!match) return 0
+  return (Number(match[1] || 0) * 3600) + (Number(match[2] || 0) * 60) + Number(match[3] || 0)
+}
+
+async function readYouTubeApiMetadata(videoId) {
+  if (!YOUTUBE_API_KEY) return null
+  const endpoint = new URL('https://www.googleapis.com/youtube/v3/videos')
+  endpoint.searchParams.set('part', 'contentDetails,snippet')
+  endpoint.searchParams.set('id', videoId)
+  endpoint.searchParams.set('key', YOUTUBE_API_KEY)
+  try {
+    const payload = await requestJson(endpoint.toString(), undefined, { method: 'GET', timeoutMs: 10_000 })
+    const item = Array.isArray(payload.items) ? payload.items[0] : null
+    const duration = parseYouTubeDuration(item?.contentDetails?.duration)
+    if (!item || duration <= 0) return null
+    return {
+      duration,
+      height: null,
+      thumbnail: item.snippet?.thumbnails?.maxres?.url || item.snippet?.thumbnails?.high?.url || null,
+      title: String(item.snippet?.title || '').slice(0, 300),
+    }
+  } catch (error) {
+    // The relay remains a fallback for quota, permission, or temporary API errors.
+    console.warn(`[clip-api] YouTube Data API metadata failed: ${error.message}`)
+    return null
+  }
+}
+
 async function handleSourceInfo(req, res) {
   if (!WORKER_TOKEN) throw new ApiError('Video metadata is not configured yet. Please try again later.', 503)
   const body = await readJsonBody(req, 64 * 1024)
   const videoUrl = String(body.videoUrl ?? '').trim()
-  if (!isYouTubeVideoUrl(videoUrl)) throw new ApiError('Only YouTube links are supported. Please paste a YouTube video URL.')
+  const videoId = youtubeVideoId(videoUrl)
+  if (!videoId) throw new ApiError('Only YouTube links are supported. Please paste a YouTube video URL.')
+  const apiMetadata = await readYouTubeApiMetadata(videoId)
+  if (apiMetadata) {
+    sendJson(res, 200, {
+      jobId: `youtube-api-${videoId}`,
+      status: 'done',
+      ...apiMetadata,
+      error: null,
+    })
+    return
+  }
   const job = await createRelayJob({ kind: 'source-info', videoUrl, duration: 0 })
   sendJson(res, 202, sourceInfoView(job))
 }
@@ -1196,8 +1238,8 @@ async function handleSourceInfoStatus(req, res, jobId) {
   sendJson(res, 200, sourceInfoView(job))
 }
 
-/** Accept the same YouTube URL shapes as the browser preview parser. */
-function isYouTubeVideoUrl(input) {
+/** Return the YouTube video id for the URL shapes accepted by the browser parser. */
+function youtubeVideoId(input) {
   let url
   try {
     url = new URL(String(input || '').trim())
@@ -1212,7 +1254,12 @@ function isYouTubeVideoUrl(input) {
       : host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtube-nocookie.com'
         ? url.searchParams.get('v') || url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1] || ''
         : ''
-  return /^[\w-]{11}$/.test(id)
+  return /^[\w-]{11}$/.test(id) ? id : null
+}
+
+/** Accept the same YouTube URL shapes as the browser preview parser. */
+function isYouTubeVideoUrl(input) {
+  return Boolean(youtubeVideoId(input))
 }
 
 /** Uploaded files are already stored by this service and remain supported. */
