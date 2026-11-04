@@ -40,6 +40,16 @@ export type ClipJobInput = {
   sourceName?: string
 }
 
+export type SourceInfoJob = {
+  jobId: string
+  status: 'running' | 'done' | 'error'
+  duration: number
+  height: number | null
+  thumbnail: string | null
+  title: string
+  error: string | null
+}
+
 const PLATFORMS: Platform[] = ['youtube', 'instagram', 'linkedin', 'tiktok', 'facebook', 'x']
 
 /** 页面上拿不到更具体的原因时说这一句，跟后端的同名常量保持一致。 */
@@ -132,6 +142,22 @@ export async function createClipJob(input: ClipJobInput): Promise<JobView> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
+  if (!response.ok) throw new ServerMessage(await readError(response))
+  return response.json()
+}
+
+export async function requestSourceInfo(videoUrl: string): Promise<SourceInfoJob> {
+  const response = await fetch('/api/source-info', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videoUrl }),
+  })
+  if (!response.ok) throw new ServerMessage(await readError(response))
+  return response.json()
+}
+
+export async function fetchSourceInfo(jobId: string): Promise<SourceInfoJob> {
+  const response = await fetch(`/api/source-info/${encodeURIComponent(jobId)}`)
   if (!response.ok) throw new ServerMessage(await readError(response))
   return response.json()
 }

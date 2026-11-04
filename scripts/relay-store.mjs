@@ -190,15 +190,25 @@ export async function applyWorkerEvent(jobId, leaseId, event) {
       job.label = event.label || 'Processing your video…'
     } else if (event.type === 'completed') {
       const payload = event.result || event
+      const sourceDuration = Number(event.sourceDuration ?? payload.sourceDuration)
+      if (Number.isFinite(sourceDuration) && sourceDuration > 0) {
+        job.input = { ...job.input, duration: sourceDuration }
+      }
       job.status = 'finalizing'
       job.result = {
         highlights: Array.isArray(payload.highlights) ? payload.highlights : [],
         segments: Array.isArray(payload.segments) ? payload.segments : Array.isArray(payload.asr?.segments) ? payload.asr.segments : [],
+        metadata: payload.metadata && typeof payload.metadata === 'object' ? clone(payload.metadata) : null,
       }
       job.leaseId = ''
       job.leaseUntil = 0
       job.label = 'Preparing your clips…'
       job.progress = 90
+      if (job.input?.kind === 'source-info') {
+        job.status = 'done'
+        job.label = 'Video information ready'
+        job.progress = 100
+      }
     } else if (event.type === 'failed') {
       job.status = 'error'
       job.error = String(event.error || 'The processing worker failed.').slice(0, 1000)

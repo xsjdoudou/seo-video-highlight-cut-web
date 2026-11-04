@@ -1128,6 +1128,7 @@ async function handleWorkerNext(req, res, url) {
 
 async function recordWorkerFailure(record, detail) {
   if (!record) return
+  if (record.input?.kind === 'source-info') return
   const user = record.input?.email ? await findUserByEmail(record.input.email) : null
   await recordConsumption(relayRuntimeJob(record), user, 'error', 0, 0, detail)
 }
@@ -1144,7 +1145,7 @@ async function handleWorkerEvent(req, res, jobId) {
   const result = await applyWorkerEvent(jobId, leaseId, { ...body, type })
   if (!result.ok) throw new ApiError(result.code === 'not_found' ? 'Worker job not found.' : 'Worker lease expired.', result.code === 'not_found' ? 404 : 409)
 
-  if (type === 'completed') {
+  if (type === 'completed' && result.status === 'finalizing') {
     resumeFinalization(result.job)
   } else if (type === 'failed') {
     recordWorkerFailure(result.job, result.job.error).catch((error) => console.error('[clip-api] 写 Worker 失败记录失败：', error))
@@ -1164,6 +1165,35 @@ function jobView(job) {
     highlights: status === 'done' ? job.highlights || [] : [],
     error: status === 'error' ? job.error : null,
   }
+}
+
+function sourceInfoView(job) {
+  const status = job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : 'running'
+  const metadata = job.result?.metadata || {}
+  return {
+    jobId: job.jobId || job.id,
+    status,
+    duration: Number(metadata.duration) || 0,
+    height: Number(metadata.height) || null,
+    thumbnail: typeof metadata.thumbnail === 'string' ? metadata.thumbnail : null,
+    title: typeof metadata.title === 'string' ? metadata.title : '',
+    error: status === 'error' ? job.error : null,
+  }
+}
+
+async function handleSourceInfo(req, res) {
+  if (!WORKER_TOKEN) throw new ApiError('Video metadata is not configured yet. Please try again later.', 503)
+  const body = await readJsonBody(req, 64 * 1024)
+  const videoUrl = String(body.videoUrl ?? '').trim()
+  if (!isYouTubeVideoUrl(videoUrl)) throw new ApiError('Only YouTube links are supported. Please paste a YouTube video URL.')
+  const job = await createRelayJob({ kind: 'source-info', videoUrl, duration: 0 })
+  sendJson(res, 202, sourceInfoView(job))
+}
+
+async function handleSourceInfoStatus(req, res, jobId) {
+  const job = await getRelayJob(jobId)
+  if (!job || job.input?.kind !== 'source-info') throw new ApiError('This video information request has expired.', 404)
+  sendJson(res, 200, sourceInfoView(job))
 }
 
 /** Accept the same YouTube URL shapes as the browser preview parser. */
@@ -1579,6 +1609,10 @@ export function createClipApi() {
       if (pathname === '/api/auth/google/callback' && req.method === 'GET') return handleGoogleCallback(req, res, url)
       if (pathname === '/api/auth/me' && req.method === 'GET') return handleMe(req, res)
       if (pathname === '/api/auth/logout' && req.method === 'POST') return handleLogout(req, res)
+      if (pathname === '/api/source-info' && req.method === 'POST') return handleSourceInfo(req, res)
+      if (pathname.startsWith('/api/source-info/') && req.method === 'GET') {
+        return handleSourceInfoStatus(req, res, pathname.slice('/api/source-info/'.length))
+      }
       if (pathname === '/api/clip' && req.method === 'POST') return handleCreateJob(req, res)
       if (pathname === '/api/account' && req.method === 'GET') return handleAccount(req, res)
       if (pathname === '/api/assets' && req.method === 'GET') return handleAssets(req, res)

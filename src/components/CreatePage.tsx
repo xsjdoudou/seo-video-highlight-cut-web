@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDuration, type Clip } from '../data/clips'
 import { getSession, refreshBalance, useBalance } from '../lib/auth'
-import { createClipJob, fetchClipJob, GENERIC_FAILURE, highlightsToClips, ServerMessage, uploadVideo } from '../lib/clipApi'
+import {
+  createClipJob,
+  fetchClipJob,
+  fetchSourceInfo,
+  GENERIC_FAILURE,
+  highlightsToClips,
+  requestSourceInfo,
+  ServerMessage,
+  uploadVideo,
+} from '../lib/clipApi'
 import {
   estimateCredits,
   formatBytes,
@@ -21,7 +30,7 @@ type Phase = 'ready' | 'working' | 'done' | 'error'
 const POLL_MS = 2000
 
 const CREDITS_HINT =
-  'Credits are charged per minute of source video. We can only count them once we know how long the video is.'
+  'Credits are charged at 2 credits per minute of source video.'
 
 /** Small on/off switch used by the clipping options panel. */
 function Toggle({
@@ -60,6 +69,8 @@ export default function CreatePage({
   onOpenClip: (clip: Clip) => void
 }) {
   const [info, setInfo] = useState<SourceInfo>({ poster: null, duration: null, height: null })
+  const [infoLoading, setInfoLoading] = useState(false)
+  const [infoError, setInfoError] = useState('')
   /** maxresdefault is missing on plenty of videos, so fall back to hqdefault. */
   const [thumbSize, setThumbSize] = useState<'maxres' | 'hq'>('maxres')
   const [thumbBroken, setThumbBroken] = useState(false)
@@ -75,21 +86,59 @@ export default function CreatePage({
   const balance = useBalance()
   /** 换源或离开页面后，还没跑完的那一轮轮询不该再写 state。 */
   const runId = useRef(0)
+  const infoRunId = useRef(0)
   /** 上传过的源视频地址，重跑时直接复用，别再传一遍几百 MB。 */
   const uploadedUrl = useRef<string | null>(null)
 
   const youTubeId = job.kind === 'link' ? parseYouTubeId(job.url) : null
 
-  // A local file is the only source we can actually measure in the browser.
+  // Local files are measured in the browser; YouTube metadata is read by the
+  // same outbound Worker that already has the network path for yt-dlp.
   useEffect(() => {
+    const requestId = ++infoRunId.current
+    let live = true
     setInfo({ poster: null, duration: null, height: null })
     setThumbSize('maxres')
     setThumbBroken(false)
-    if (job.kind !== 'file') return
-    let live = true
-    readLocalVideo(job.file).then((result) => live && setInfo(result))
+    setInfoError('')
+    setInfoLoading(true)
+
+    if (job.kind === 'file') {
+      readLocalVideo(job.file).then((result) => {
+        if (live && requestId === infoRunId.current) setInfo(result)
+      }).finally(() => {
+        if (live && requestId === infoRunId.current) setInfoLoading(false)
+      })
+      return () => {
+        live = false
+        infoRunId.current += 1
+      }
+    }
+
+    const loadYouTubeInfo = async () => {
+      try {
+        let view = await requestSourceInfo(job.url)
+        for (let attempt = 0; attempt < 40 && view.status === 'running'; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 750))
+          if (!live || requestId !== infoRunId.current) return
+          view = await fetchSourceInfo(view.jobId)
+        }
+        if (view.status === 'error') throw new ServerMessage(view.error || 'We could not read this YouTube video.')
+        if (view.status !== 'done' || view.duration <= 0) throw new ServerMessage('We could not read this YouTube video length.')
+        if (!live || requestId !== infoRunId.current) return
+        setInfo({ poster: view.thumbnail, duration: view.duration, height: view.height })
+      } catch (error) {
+        if (!live || requestId !== infoRunId.current) return
+        setInfoError(error instanceof ServerMessage ? error.message : 'We could not read this YouTube video length.')
+      } finally {
+        if (live && requestId === infoRunId.current) setInfoLoading(false)
+      }
+    }
+    void loadYouTubeInfo()
+
     return () => {
       live = false
+      infoRunId.current += 1
     }
   }, [job])
 
@@ -177,6 +226,8 @@ export default function CreatePage({
   const ctaLabel =
     phase === 'working'
       ? `${status}${progress ? ` ${progress}%` : ''}`
+      : infoLoading
+        ? 'Reading video length…'
       : phase === 'done'
         ? 'Run again'
         : phase === 'error'
@@ -216,7 +267,7 @@ export default function CreatePage({
         </button>
       </div>
 
-      <button type="button" className="create__cta" onClick={start} disabled={phase === 'working'}>
+      <button type="button" className="create__cta" onClick={start} disabled={phase === 'working' || infoLoading}>
         {phase === 'working' && <span className="spinner" aria-hidden="true" />}
         {ctaLabel}
       </button>
@@ -230,6 +281,12 @@ export default function CreatePage({
       {error && (
         <p className="create__error" role="alert">
           {error}
+        </p>
+      )}
+
+      {infoError && (
+        <p className="create__error" role="status">
+          {infoError} You can continue, but the credit estimate may be unavailable until the video metadata is read.
         </p>
       )}
 
@@ -255,7 +312,7 @@ export default function CreatePage({
         ) : (
           <div className="create__thumb-placeholder">
             <LinkIcon />
-            <span>{job.kind === 'file' ? 'Reading your file…' : 'Preview unavailable for this link'}</span>
+            <span>{job.kind === 'file' ? 'Reading your file…' : infoLoading ? 'Reading video length…' : 'Preview unavailable for this link'}</span>
           </div>
         )}
         {info.height ? <span className="duration-badge create__quality">{info.height}p</span> : null}
