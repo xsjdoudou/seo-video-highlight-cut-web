@@ -1,0 +1,109 @@
+#   ⚠ 这个 unit 装在**国内那台 GPU 机器**上，不是海外机器。
+#      仓库里另外两个 unit（clip-api / web）才是海外机器用的。
+#
+# 干什么：从国内这台往海外机器开一条 SSH 反向隧道，把本机的 10080
+# （seo_server.py）挂到海外机器的 127.0.0.1:10080 上。
+#
+# 为什么要这么绕：国内这台是阿里云 ECS i-uf659g4jleurwg5zoboz，安全组的
+# 入方向规则我们没有权限改，海外机器直连 101.132.167.193:10080 是超时
+# （丢包，不是拒绝）。但**出方向**是全放通的，所以反过来由国内发起连接
+# 就完全不需要动安全组。
+#
+# 附带的好处：这一跳变成 SSH 加密的了。直连方案里 SEO_TOKEN 是明文走公网的。
+#
+# 装之前要做的三件事：
+#
+#   1. 国内这台生成一把专用密钥（别复用你自己的）。
+#      ⚠ 用 sudo 生成的话属主是 root，而 unit 是以 User= 那个普通用户跑的，
+#        读不到会报 `Load key ...: Permission denied`，紧接着因为没钥匙可用
+#        而变成 `Permission denied (publickey)`——看着像密钥没加对，其实是本地权限。
+#        所以生成完一定要 chown 过去：
+#        sudo ssh-keygen -t ed25519 -f /etc/seo-video-highlight/tunnel_key -N ''
+#        sudo chown xieshiji:xieshiji /etc/seo-video-highlight/tunnel_key*
+#        sudo chmod 600 /etc/seo-video-highlight/tunnel_key
+#
+#   2. 把公钥加到**海外机器**的 ~/.ssh/authorized_keys，前面带上限制项：
+#        restrict,port-forwarding,permitlisten="127.0.0.1:10080" ssh-ed25519 AAAA...
+#      restrict 关掉 pty / agent 转发 / X11 / user-rc，再单独把端口转发开回来，
+#      permitlisten 锁死这把钥匙只能挂这一个端口。这样即使密钥泄漏，拿到的
+#      也只是「往海外机器挂一个 10080」，登不进 shell。
+#      （permitlisten 要 OpenSSH >= 7.8。对端太老的话去掉它，restrict + port-forwarding
+#        仍然有效，只是不再限定端口。）
+#
+#   3. 先以 User= 那个用户手动跑一遍，把海外机器的 host key 收进它的 known_hosts，
+#      否则 unit 会因为交互式确认一直失败：
+#        ssh -i /etc/seo-video-highlight/tunnel_key -N \
+#            -R 127.0.0.1:10080:127.0.0.1:10080 ubuntu@34.214.4.115
+#      能挂住不退出就对了，Ctrl-C 掉，再 systemctl enable --now seo-tunnel。
+#      ⚠ known_hosts 是按用户存的。用 sudo 手动试的话收进的是 root 的 known_hosts，
+#        unit 以普通用户跑时照样会 Host key verification failed。
+#
+# 海外机器的 /etc/ssh/sshd_config 建议加（让 sshd 及时清掉断链留下的僵尸转发，
+# 不然隧道断了之后 10080 还被占着，新隧道挂不上去）：
+#        ClientAliveInterval 30
+#        ClientAliveCountMax 3
+#
+# 然后海外机器的 web.env 里：
+#        SEO_URL=http://127.0.0.1:10080
+#
+# 改完这里记得 systemctl daemon-reload && systemctl restart seo-tunnel
+
+[Unit]
+Description=SSH reverse tunnel: expose local seo_server.py to the overseas host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xieshiji
+Environment=TUNNEL_KEY=/etc/seo-video-highlight/tunnel_key
+Environment=REMOTE=ubuntu@34.214.4.115
+# 海外那头挂的端口（SEO_URL 指的就是它）。和 permitlisten 里写的必须一致。
+Environment=REMOTE_PORT=10080
+# 国内这头 seo_server.py 实际监听的端口。就用它自己的默认值 8649，
+# 这样国内永远是 `python seo_server.py` 裸跑，不用记任何环境变量。
+# 走隧道之后端口是什么已经无所谓了——安全组不参与，两头由这个 -R 对上就行。
+# （踩过一次：有人重启服务时忘了带 SEO_PORT=10080，隧道照常挂着，
+#   表现是 `connect_to 127.0.0.1 port 10080: failed`。）
+Environment=LOCAL_PORT=8649
+
+# -N            不执行远程命令，只做转发
+# -T            不分配 tty
+# -R 127.0.0.1:REMOTE_PORT:127.0.0.1:LOCAL_PORT
+#               把海外机器的 127.0.0.1:REMOTE_PORT 转到本机的 127.0.0.1:LOCAL_PORT。
+#               ⚠ 监听地址 127.0.0.1 要**显式写出来**，不能简写成 -R PORT:...。
+#               简写的话 ssh 发给对端的 bind address 是空的，而 authorized_keys 里的
+#               permitlisten="127.0.0.1:10080" 是按请求的地址字面匹配的，空地址
+#               匹配不上，sshd 直接拒绝转发，报错是
+#               `Warning: remote port forwarding failed for listen port 10080`。
+#               写全了之后 GatewayPorts 还是 no，对端依然只绑 127.0.0.1，不对公网开放。
+# ExitOnForwardFailure=yes
+#               端口没挂上就直接退出，让 systemd 重启重来。缺了这个的话
+#               ssh 会「连上了但没转发」地挂着，表现成请求全部 connection refused
+# ServerAliveInterval/CountMax
+#               90 秒没响应就认定链路死了并退出。跨境链路会悄悄断，TCP 自己
+#               发现要几十分钟，这期间所有请求都超时
+ExecStart=/usr/bin/ssh -N -T \
+    -i ${TUNNEL_KEY} \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=3 \
+    -o StrictHostKeyChecking=yes \
+    -o IdentitiesOnly=yes \
+    -o BatchMode=yes \
+    -R 127.0.0.1:${REMOTE_PORT}:127.0.0.1:${LOCAL_PORT} \
+    ${REMOTE}
+
+# 断了就重连。RestartSec 别设太小：海外机器重启时 sshd 还没起来，
+# 1 秒一次会在日志里刷几百行。
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadOnlyPaths=/etc/seo-video-highlight
+
+[Install]
+WantedBy=multi-user.target

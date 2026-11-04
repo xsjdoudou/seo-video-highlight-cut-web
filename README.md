@@ -1,1 +1,399 @@
 # seo-video-highlight-cut-web
+
+高光剪辑站点的前端 + 一层薄薄的编排服务（`scripts/clip-api.mjs`）。
+
+## 当前生产架构
+
+生产环境使用 AWS 中继队列，不使用 AWS 到阿里云的入站连接，也不使用 SSH 反向隧道：
+
+```
+浏览器 -> AWS clip-api -> 持久化任务队列 <- HTTPS 长轮询 <- 阿里云 seo_worker.py
+                                  阿里云 Worker -> 127.0.0.1:10080 seo_server.py
+```
+
+AWS 只暴露网站和 Worker relay API。阿里云 Worker 由 `gg --noudp` 启动，主动向
+`AWS_RELAY_URL` 建立出站 HTTPS 连接，领取任务后调用本机 SEO 服务，并回传进度和结果。
+因此阿里云安全组不需要开放 `10080`，AWS 生产配置也不应设置 `SEO_URL`。
+
+### 用户认证
+
+登录支持服务端邮箱 + 密码和 Google OAuth：密码以 `scrypt` 哈希保存，Google 回调
+会按已验证邮箱创建或更新本地账户。两种方式都使用同一枚 HttpOnly Cookie，账户、剪辑
+和支付接口都从服务端会话确定用户身份。生产 HTTPS 会自动启用 Secure Cookie；也可以
+在服务器环境中显式设置 `AUTH_COOKIE_SECURE=true`。
+
+要启用 Google 登录，在 Google Cloud Console 创建 OAuth 2.0 Web client，并把生产回调地址
+加入 Authorized redirect URIs：
+
+```text
+https://video-highlight.com/api/auth/google/callback
+```
+
+然后在 `.env`/`web.env` 设置 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` 和
+`GOOGLE_REDIRECT_URI`。本地开发时回调地址可用 `http://localhost:10050/api/auth/google/callback`；
+Google 对 localhost 允许 HTTP，生产环境必须使用 HTTPS。
+
+### 生产部署
+
+AWS `/etc/seo-video-highlight/web.env` 至少设置：
+
+```text
+WORKER_TOKEN=<openssl rand -hex 32 生成的随机值>
+PUBLIC_BASE=https://video-highlight.com
+SOURCE_PUBLIC_BASE=https://video-highlight.com
+```
+
+阿里云 `/etc/seo-video-highlight/worker.env` 设置同一个 `WORKER_TOKEN`：
+
+```text
+AWS_RELAY_URL=https://video-highlight.com
+WORKER_TOKEN=<与 AWS 完全相同>
+WORKER_ID=aliyun-gpu-1
+LOCAL_SEO_URL=http://127.0.0.1:10080/v1/seo
+SEO_TOKEN=<与 seo_server.py 相同；若本机服务未启用鉴权可留空>
+```
+
+模板位于阿里云仓库的 `deploy/worker.env.example`，复制后填写真实令牌并执行
+`chmod 600 /etc/seo-video-highlight/worker.env`。
+
+### Waffo 付费积分
+
+网站的 Pricing 和账户页已接入 Waffo 托管收银台。付款流程是：AWS 服务端创建
+checkout session → 浏览器跳转 Waffo → Waffo 向 `/api/webhooks/waffo` 发送签名的
+`order.completed` → 验签并按 payment id 幂等地给账户增加积分。浏览器回到成功页本身
+不会直接加积分。
+
+在 Waffo Dashboard 中创建三个一次性产品，并将生产环境的 Product ID 填入
+`.env`/`web.env` 中的 `WAFFO_PLAN_*_PRODUCT_ID`；`*_CREDITS` 必须与该产品实际售卖的
+积分一致。把 API 私钥和 Waffo Webhook Public Key 保存到服务器上的文件，文件权限设为
+`600`，不要写进仓库或 systemd unit：
+
+```bash
+sudo chmod 600 /etc/seo-video-highlight/waffo-private-key.pem
+sudo chmod 600 /etc/seo-video-highlight/waffo-webhook-public-key.pem
+```
+
+在 Waffo 的 Webhooks 设置中添加：
+
+```text
+https://video-highlight.com/api/webhooks/waffo
+事件：order.completed
+环境：Production
+```
+
+然后重启 `clip-api`。用 `GET /api/billing/plans` 检查套餐的 `available` 是否为
+`true`，再用 Waffo Test 环境和测试 Product ID 完成一次支付验证。生产环境的
+`WAFFO_ENVIRONMENT`、Product ID、Merchant ID 和 webhook 公钥必须成套配置，不能混用。
+
+两台机器分别安装 unit 后启动：
+
+```bash
+# AWS
+sudo systemctl daemon-reload
+sudo systemctl enable --now clip-api
+
+# 阿里云
+sudo systemctl daemon-reload
+sudo systemctl disable --now seo-tunnel 2>/dev/null || true
+sudo systemctl enable --now seo-server seo-worker
+sudo journalctl -u seo-worker -f
+```
+
+Worker 正常时日志会出现 `claimed job=...`；网站提交任务后，AWS 的 `clip-api` 日志会
+出现入队记录，随后 Worker 日志会出现领取和完成记录。AWS 重启不会丢失队列，Worker
+租约过期后未完成的任务会自动重新入队。
+
+下面的旧「SSH 反向隧道」章节只保留作历史排障参考，不能作为生产部署步骤。
+
+## 旧架构参考（不用于生产）
+
+```
+  海外机器                                     国内 GPU 机器
+┌────────────────────────┐                 ┌──────────────────────┐
+│ 浏览器 ← vite / dist   │                 │ seo_server.py :8649  │
+│          ↕             │  ① HTTP + 令牌  │  （腾讯 ASR + 剪辑） │
+│ clip-api.mjs           │ ───────────────▶│                      │
+│                        │                 └──────────┬───────────┘
+└──────────┬─────────────┘                            │
+           │ ② 提交源视频 URL                 ③ 上传成片到 OSS
+           ▼                                          ▼
+        ┌────────────── 阿里云后端本地磁盘 ──────────────┐
+        └──────────────────────────────────────────────────────┘
+```
+
+国内那台是阿里云 ECS `i-uf659g4jleurwg5zoboz`（cn-shanghai），EIP `101.132.167.193`。
+
+本地上传先落在 AWS，再把 AWS 的源视频 URL 交给阿里云；YouTube/TikTok URL 直接交给阿里云。
+阿里云服务通过 `gg yt-dlp` 下载社交平台视频，源视频和成片都由阿里云本地处理/上传 OSS。
+
+**① 这一跳现在走 SSH 反向隧道，不是直连 EIP。** 那台 ECS 的安全组入方向规则我们
+没有权限改，海外机器直连 `101.132.167.193:10080` 是超时（包被丢了）。但它的**出方向**
+是全放通的，所以由国内主动往海外连一条隧道就绕开了权限问题，顺带把这一跳加密了。
+具体配法见下面「连不上又改不了安全组」。链路变成：
+
+```
+海外 clip-api ──▶ 127.0.0.1:10080 ──┐
+                                    │ SSH 隧道（国内发起的那条连接）
+国内 seo_server.py :8649  ◀──────────┘
+```
+
+三件事决定了海外机器能不能跑通：
+
+1. **① 要带令牌。** `seo_server.py` 配了 `SEO_TOKEN` 之后，不带令牌的请求一律 `401`。
+   两边的值必须一模一样。走隧道也一样要带——隧道只解决「连得上」，不解决鉴权。
+2. **端口两头不一样，由隧道对上。** 国内就用 `seo_server.py` 的默认端口 8649
+   （裸跑 `python seo_server.py` 即可，**不用**带 `SEO_PORT=`），海外那头是 10080。
+   隧道的 `-R 127.0.0.1:10080:127.0.0.1:8649` 负责把它们接起来。
+3. **③ 仍需在阿里云后端配置 OSS。** 源视频不再上传 OSS，但剪辑完成后，后端会把成片
+   上传 OSS 并把成片 URL 返回给海外前端。OSS 凭证只需要配置在阿里云后端。
+
+### 国内那边怎么起
+
+```bash
+cd /datadisk1/xieshiji/code/seo-jogg-video-highlight-cut
+python seo_server.py
+```
+
+就这一条，**不带任何环境变量**。端口是它自己的默认值 8649，令牌从 Nacos 的
+`seo_token` 读。（踩过一次：之前要求带 `SEO_PORT=10080`，结果重启时漏了，
+隧道照常挂着但转发不到服务上，报 `connect_to 127.0.0.1 port 10080: failed`。
+现在端口差异交给隧道的 `-R` 处理，这边不用记了。）
+
+启动日志里必须看到这一行：
+
+```
+接口鉴权已开启，调用方需要带上 Authorization: Bearer <SEO_TOKEN>
+```
+
+看到的是 `未配置 SEO_TOKEN，接口无鉴权` 就立刻停掉——`make_server("", port, app)`
+绑的是 `0.0.0.0`，8649 对公网是开着的，挡在前面的只有 `SEO_TOKEN`，
+没有它谁扫到都能白嫖这台机器的 GPU。
+
+（更稳的做法是让它只绑 `127.0.0.1`——走隧道之后外部本来就不需要直连。
+那要改 `seo_server.py` 里的 `make_server("", port, app)`，暂时没动。）
+
+## 连不上又改不了安全组
+
+症状：海外机器 `npm run check:seo` 第二步**超时**（不是 connection refused），
+而国内那台上 `curl http://127.0.0.1:10080/health_check` 是 200。
+
+超时和拒绝的区别很关键：阿里云安全组拦下来的包是直接**丢弃**的，不回 RST，
+所以表现成超时；包到了但没人监听才会回 connection refused。超时 = 根本没到机器。
+
+正规解法是在阿里云控制台给实例 `i-uf659g4jleurwg5zoboz` 的安全组加一条入方向规则
+（自定义 TCP / `10080/10080` / 授权对象填海外机器的公网 IP 加 `/32`）。
+**没有那个权限的话走下面这条，一条规则都不用加。**
+
+### SSH 反向隧道
+
+安全组对**出方向**是全放通的，所以反过来由国内发起连接就绕开了权限问题：
+
+```
+国内机器  ssh -R 127.0.0.1:10080:127.0.0.1:8649 <用户>@<海外IP>
+                      │        ▲                      ▲
+                      │        │                      └ 国内：seo_server.py 的默认端口
+                      │        └ 海外：SEO_URL 指的就是它
+                      └─▶ 海外机器上出现一个 127.0.0.1:10080，连它就等于连国内的服务
+```
+
+两头端口不一样是故意的。**走隧道之后安全组不参与了，端口想用哪个用哪个**，
+所以国内这头干脆用 `seo_server.py` 自己的默认值 8649——国内永远是
+`python seo_server.py` 裸跑，不用记 `SEO_PORT=`。海外那头固定 10080，
+`SEO_URL` 一个字不用改。
+
+需要的权限只有**海外机器的 22 入方向**，那台是你自己的。额外的好处是这一跳变成
+SSH 加密的了——直连方案里 `SEO_TOKEN` 是明文走公网的。
+
+装法见 [deploy/seo-tunnel.service](deploy/seo-tunnel.service)，文件头上写了完整步骤。
+四个容易踩的点先说在这里，报错都指向错误的方向：
+
+- **密钥别留在 root 名下。** `sudo ssh-keygen` 生成出来是 `root:root`，而隧道是以普通
+  用户跑的，读不到就报 `Load key ...: Permission denied`，紧接着因为没钥匙可用而变成
+  `Permission denied (publickey)`——看着像公钥没加对，其实是本地文件权限。
+  生成完 `sudo chown <跑隧道的用户>:<同左> /etc/seo-video-highlight/tunnel_key*`。
+- **监听地址要写全。** 必须是 `-R 127.0.0.1:10080:...`，不能简写成 `-R 10080:...`。
+  简写时 ssh 发过去的 bind address 是空的，和 `authorized_keys` 里的
+  `permitlisten="127.0.0.1:10080"` 字面匹配不上，sshd 会拒绝转发，报
+  `Warning: remote port forwarding failed for listen port 10080`。
+- **host key 是按用户存的。** 先用**跑隧道的那个用户**手动 ssh 一次收 host key。
+  用 sudo 试的话收进的是 root 的 `known_hosts`，unit 照样 `Host key verification failed`。
+- **`ExitOnForwardFailure=yes` 不能省。** 缺了它，端口没挂上时 ssh 会「连上了但没转发」
+  地挂着，systemd 看着是 active，而所有请求都 connection refused。
+
+密钥要限权：海外机器的 `authorized_keys` 里给这把钥匙加上
+`restrict,port-forwarding,permitlisten="127.0.0.1:10080"`。这样密钥泄漏了也只能挂
+这一个端口，登不进 shell。
+
+挂好之后，海外机器的配置改成：
+
+```
+SEO_URL=http://127.0.0.1:10080
+```
+
+隧道那头绑的是海外机器的 `127.0.0.1`（sshd 默认 `GatewayPorts no`），只有本机进程连得上，
+不对公网开放。`check:seo` 认得这个地址，第一步会打「指向本机：要么是本机联调，
+要么是走 SSH 反向隧道」。
+
+隧道断了的表现是 `check:seo` 第二步失败而国内服务一切正常。到国内那台上看：
+
+```bash
+systemctl status seo-tunnel
+journalctl -u seo-tunnel -n 50
+```
+
+## 装 node
+
+vite 7 要求 **node >= 20.19**。版本不够的话 `npm ci` 能装完，但一跑就炸，
+而且报错完全看不出是版本问题（`SyntaxError: Unexpected token '?'` 之类）。
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node -v
+```
+
+**装完 `node -v` 还是旧版本？多半是 conda。** 提示符上有 `(base)` 就是——
+conda 把自己的 `bin` 排在 `PATH` 最前面，`apt install` 装到 `/usr/bin/node` 的那个
+被它挡住了。验一下：
+
+```bash
+which -a node        # 第一行是 ~/miniconda3/bin/node 就是被挡了
+```
+
+是的话 `conda deactivate`，重开一个 shell，然后 `rm -rf node_modules && npm ci`
+重装依赖——之前用旧 node 装的原生模块对不上新版本。
+
+`npm run dev` / `preview` / `clip-api` / `check:seo` 都会先过 `scripts/with-env.mjs`
+的版本检查，版本不够会直接告诉你怎么装，不会抛那种看不懂的语法错。
+（那个文件本身是用老语法写的，不然它自己就先被解析报错了，检查根本跑不到。）
+
+## 环境变量
+
+所有配置都走环境变量，没有配置文件格式要学。完整清单和说明在 [.env.example](.env.example)。
+
+**变量名一律不要加 `VITE_` 前缀。** vite 的 `envPrefix` 默认就是 `VITE_`，带这个前缀的值
+会被编译进浏览器能下载到的 JS 里，令牌等于公开。（`npm run build` 后可以自己
+`grep -r '你的令牌' dist/` 验一下，正常情况下搜不到。）
+
+三种设法，按场景选：
+
+| 场景 | 做法 |
+| --- | --- |
+| 本机开发 | `cp .env.example .env && chmod 600 .env`，然后照常 `npm run dev` |
+| systemd 托管 | 写 `/etc/seo-video-highlight/web.env`，unit 里用 `EnvironmentFile=`，见 [deploy/](deploy/) |
+| 临时试一下 | `SEO_TOKEN=xxx npm run dev`，优先级高于 `.env` |
+
+`.env` 已经在 `.gitignore` 里。**真实令牌只写 `.env`，不要写进 `.env.example`、
+不要写进任何会提交的文件。**
+
+### `.env` 是怎么被读到的
+
+`npm run dev` / `preview` / `clip-api` 都经过 `scripts/with-env.mjs`：读 `.env` 塞进
+`process.env`，再把真正的命令当子进程起来。文件不存在就跳过，本机不配也能跑。
+
+绕这一圈是因为 node 原生的 `--env-file` 在这里用不了：dev 模式下 `clip-api` 是被
+`vite.config.ts` 挂进 **vite 进程**里的（见那边的 `configureServer`），给 vite 传 node
+参数只能走 `NODE_OPTIONS`，而 node 明确拒绝 `NODE_OPTIONS` 里出现 `--env-file`。
+
+用 systemd 的 `EnvironmentFile=` 时不需要这一层，unit 里直接 `ExecStart=node scripts/clip-api.mjs`。
+
+## 本机开发
+
+```bash
+npm install
+npm run prepare:media     # 生成演示素材，可选，约 170MB
+cp .env.example .env && chmod 600 .env
+npm run dev               # http://127.0.0.1:10050
+```
+
+dev 模式是**一个进程**：vite 和 clip-api 在一起。
+
+`npm run preview` 那套是**三个进程**，各自需要的变量不同：
+
+| 进程 | 命令 | 要 `SEO_TOKEN` 吗 |
+| --- | --- | --- |
+| 静态站点 | `npx vite preview`（:4173） | 不要 |
+| 编排服务 | `npm run clip-api`（:10051） | **要** |
+| 访问口令代理 | `npm run auth-proxy`（:10060） | 不要 |
+
+## AWS 部署细节
+
+```bash
+# 依赖
+#   node >= 20.19（见上面「装 node」）、python3、ffmpeg、fonts-noto-cjk（烧中文字幕要）
+#   pip install oss2
+
+git clone https://github.com/xsjdoudou/seo-video-highlight-cut-web.git /srv/seo-video-highlight-cut-web
+cd /srv/seo-video-highlight-cut-web
+npm ci
+npm run build
+
+sudo mkdir -p /etc/seo-video-highlight
+sudo cp .env.example /etc/seo-video-highlight/web.env
+sudo vi   /etc/seo-video-highlight/web.env   # 填 WORKER_TOKEN / PUBLIC_BASE / SOURCE_PUBLIC_BASE
+sudo chmod 600 /etc/seo-video-highlight/web.env
+```
+
+抄 `.env.example` 过去时注意 systemd 的 `EnvironmentFile` 语法比 shell 严：不要写
+`export`，也不要在值后面跟 ` # 注释`。整行注释没问题。
+
+生产模式不再运行 `npm run check:seo`：它检查的是旧的 AWS 直连 SEO_URL。部署后用
+下面的 Worker relay 检查代替：
+
+```bash
+curl -i -H "Authorization: Bearer $WORKER_TOKEN" \
+  "https://video-highlight.com/api/worker/jobs/next?wait=1"
+```
+
+空队列应返回 `200` 和 `{"job":null}`；返回 `401` 表示 `WORKER_TOKEN` 不一致。
+
+### OSS 凭证放在阿里云后端
+
+海外机器不再需要 `OSS_*`。请把后端的 `OSS_AK` / `OSS_SK` / `ENDPOINT` /
+`BUKET_NAME` 配置在阿里云 `seo_server.py` 的运行环境中，成片上传仍依赖它们。
+
+后端从 Nacos 读取时无需在海外机器导出这些变量；如果后端改为环境变量配置，直接写入
+阿里云 `seo-server.service` 的环境文件即可，不要写入海外前端的 `.env`。
+
+systemd 的 env 文件只放在服务器上并设为 `600`；不要把令牌放进仓库或命令行。
+
+然后起 AWS 服务（不要启用 `seo-tunnel`）：
+
+```bash
+sudo cp deploy/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now clip-api web
+sudo systemctl disable --now seo-tunnel 2>/dev/null || true
+```
+
+### Worker 和 SEO 鉴权
+
+两组令牌分别配置，不能混用：
+
+1. AWS 和阿里云 `/etc/seo-video-highlight/worker.env` 使用同一个 `WORKER_TOKEN`。
+2. 阿里云 `seo_server.py` 的 `SEO_TOKEN` 与 Worker 的 `SEO_TOKEN` 使用同一个值。
+3. 阿里云启动 `seo-server` 后确认本机 `curl http://127.0.0.1:10080/health_check` 返回 200。
+4. 启动 `seo-worker`，确认日志出现 `claimed job=...`。
+
+令牌用 `openssl rand -hex 32` 生成。不要把明文令牌写进仓库、聊天记录或 unit 文件；
+systemd 的 env 文件权限设为 `600`。
+
+## 排查
+
+| 现象 | 多半是 |
+| --- | --- |
+| `SyntaxError: Unexpected token '?'` | node 太旧（< 20.19）。见上面「装 node」，注意 conda 会挡住新装的 node |
+| 请求**超时** | 包被丢了，没到机器。直连的话是安全组没放通；走隧道的话是隧道断了，到国内 `systemctl status seo-tunnel` |
+| 请求**被拒绝**（connection refused） | 包到了但没人监听。隧道断了，或者国内的服务没起 |
+| 隧道里刷 `connect_to 127.0.0.1 port 10080: failed` | 隧道是好的，是国内这头转发不过去——`seo_server.py` 没在跑，或者监听的端口和 `-R` 最后那个数字对不上。`ss -tlnp \| grep 8649` 查一下 |
+| 隧道 active 但请求全被拒绝 | unit 里漏了 `ExitOnForwardFailure=yes`，ssh 连上了却没挂上端口 |
+| `Load key ...: Permission denied` | 密钥还是 root 的。`sudo chown <跑隧道的用户>: /etc/seo-video-highlight/tunnel_key*` |
+| `Permission denied (publickey)` | 先排除上一行（读不到密钥会连带报这个）。密钥能读了还报，才是公钥没加进海外机器的 `authorized_keys` |
+| `Permission denied (open failed)` / `remote port forwarding failed` | `-R` 写成了 `10080:...`。要写全 `-R 127.0.0.1:10080:127.0.0.1:8649`，否则和 `permitlisten` 匹配不上 |
+| `Host key verification failed` | host key 收进了别的用户的 `known_hosts`。用跑隧道的那个用户再手动 ssh 一次 |
+| 前端报「剪辑服务拒绝了请求」 | 两边 `SEO_TOKEN` 不一致，或者一边配了一边没配。这个错误不会重试，看日志里括号里那句提示 |
+| 提交任务后卡在下载 | 检查阿里云 `seo_server.py` 是否通过 `gg` 启动，以及 `SOURCE_PUBLIC_BASE` 是否能被阿里云直接访问 |
+| `new URL()` 抛错 / `SEO_URL` 不生效 | `SEO_URL` 写成了裸 IP。必须带协议和端口：`http://127.0.0.1:10080` |
+| 剪辑服务拿不到源视频 | 本地上传检查 `SOURCE_PUBLIC_BASE` 的 URL 能否从阿里云 GET；YouTube/TikTok 检查阿里云服务是否通过 `gg` 启动 |
+| 页面上视频 404 / 下载不了 | `PUBLIC_BASE` 不对。它是给**浏览器**用的地址前缀，必须是终端用户能访问到的域名，和国内那台没关系 |
+| 字幕是方块 | 缺中文字体，`apt install fonts-noto-cjk` |
