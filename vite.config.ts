@@ -29,6 +29,12 @@ export default defineConfig({
     port: 4173,
     strictPort: true,
     // 隧道的随机域名，Host 头校验需要放行（IP 直连默认放行，域名不会）
-    allowedHosts: ['.trycloudflare.com', '.loca.lt', '.pinggy.link'],
+    allowedHosts: [
+      'video-highlight.com',
+      'www.video-highlight.com',
+      '.trycloudflare.com',
+      '.loca.lt',
+      '.pinggy.link',
+    ],
   },
 })
