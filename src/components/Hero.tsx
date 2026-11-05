@@ -6,7 +6,7 @@ export default function Hero() {
         Turn long videos into <span className="hero__accent">viral shorts</span>
       </h1>
       <p className="hero__subtitle">
-        Video Highlight turns long videos into shorts, and publishes them to all social platforms in one click.
+        Video Highlight turns long videos into shorts. One-click publishing to all social platforms is planned for a future release.
       </p>
     </section>
   )

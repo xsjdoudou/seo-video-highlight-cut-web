@@ -141,8 +141,8 @@ export default function AuthModal({ onClose, onDone }: { onClose: () => void; on
         </button>
 
         <p className="auth__terms">
-          By continuing you agree to our <a href="#" className="auth__link">Terms of Use</a> and{' '}
-          <a href="#" className="auth__link">Privacy Policy</a>.
+          By continuing you agree to our <a href="/terms" className="auth__link">Terms of Use</a> and{' '}
+          <a href="/privacy" className="auth__link">Privacy Policy</a>.
         </p>
       </div>
     </div>,
