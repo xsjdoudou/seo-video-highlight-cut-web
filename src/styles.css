@@ -2342,6 +2342,38 @@ button {
 
 /* ---------- Footer ---------- */
 
+.home-content {
+  width: min(100% - 48px, 900px);
+  margin: 96px auto;
+}
+
+.home-content section + section {
+  margin-top: 64px;
+}
+
+.home-content h2 {
+  margin: 0 0 22px;
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.home-content h3 {
+  margin: 28px 0 8px;
+  font-size: 18px;
+}
+
+.home-content p {
+  margin: 0 0 16px;
+  color: #b6b6bc;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.home-content a {
+  color: #fff;
+  text-decoration: underline;
+}
+
 .footer {
   display: flex;
   align-items: center;

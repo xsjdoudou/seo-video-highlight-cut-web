@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
+import HomeContent from './components/HomeContent'
 import DemoShowcase from './components/DemoShowcase'
 import CreatePage from './components/CreatePage'
 import AccountPage from './components/AccountPage'
@@ -179,6 +180,7 @@ export default function App({ initialPath }: { initialPath?: string } = {}) {
           <>
             <Hero />
             <DemoShowcase onOpenClip={setActiveClip} onStart={start} paused={activeClip !== null} />
+            <HomeContent />
           </>
         )}
       </main>
