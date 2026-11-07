@@ -10,6 +10,7 @@ import LegalPage from './components/LegalPage'
 import HowItWorksPage from './components/HowItWorksPage'
 import type { Clip } from './data/clips'
 import type { JobInput } from './lib/videoSource'
+import { pageSeo } from './seo'
 
 const CREATE_PATH = '/create'
 const ACCOUNT_PATH = '/account'
@@ -19,26 +20,28 @@ const PRIVACY_PATH = '/privacy'
 const HOW_IT_WORKS_PATH = '/how-it-works'
 const CREATIONS_PATH = '/creations'
 
-export default function App() {
+export default function App({ initialPath }: { initialPath?: string } = {}) {
+  const path = initialPath ?? window.location.pathname
   const [activeClip, setActiveClip] = useState<Clip | null>(null)
   const [job, setJob] = useState<JobInput | null>(null)
   // 账户页的数据全从接口来，刷新和深链都能直接打开，不像 /create 那样依赖内存里的 job。
-  const [account, setAccount] = useState(() => window.location.pathname === ACCOUNT_PATH)
-  const [pricing, setPricing] = useState(() => window.location.pathname === PRICING_PATH)
-  const [howItWorks, setHowItWorks] = useState(() => window.location.pathname === HOW_IT_WORKS_PATH)
-  const [creations, setCreations] = useState(() => window.location.pathname === CREATIONS_PATH)
+  const [account, setAccount] = useState(() => path === ACCOUNT_PATH)
+  const [pricing, setPricing] = useState(() => path === PRICING_PATH)
+  const [howItWorks, setHowItWorks] = useState(() => path === HOW_IT_WORKS_PATH)
+  const [creations, setCreations] = useState(() => path === CREATIONS_PATH)
   const [legalPath, setLegalPath] = useState<'terms' | 'privacy' | null>(() => {
-    if (window.location.pathname === TERMS_PATH) return 'terms'
-    if (window.location.pathname === PRIVACY_PATH) return 'privacy'
+    if (path === TERMS_PATH) return 'terms'
+    if (path === PRIVACY_PATH) return 'privacy'
     return null
   })
 
   useEffect(() => {
-    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
-    if (canonical) {
-      const path = pricing ? PRICING_PATH : howItWorks ? HOW_IT_WORKS_PATH : '/'
-      canonical.href = `https://video-highlight.com${path}`
-    }
+    const seo = pageSeo(pricing ? PRICING_PATH : howItWorks ? HOW_IT_WORKS_PATH : '/')
+    document.title = seo.title
+    document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.setAttribute('href', seo.canonical)
+    document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute('content', seo.description)
+    document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.setAttribute('content', seo.title)
+    document.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.setAttribute('content', seo.description)
   }, [pricing, howItWorks])
 
   // The job only lives in memory, so a reload or a deep link to /create has

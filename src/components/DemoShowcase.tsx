@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { formatDuration, pickSourceIndex, sources, type Clip } from '../data/clips'
+import { formatDuration, sources as allSources, type Clip } from '../data/clips'
 import { parseYouTubeId, type JobInput } from '../lib/videoSource'
 import ClipCard from './ClipCard'
 import { HandCursor, LinkIcon } from './icons'
@@ -9,6 +9,7 @@ type Phase = 'idle' | 'typing' | 'clicking' | 'processing' | 'done'
 const PROMPT = 'https://www.youtube.com/watch?v=your-podcast-episode'
 const TYPE_MS = 38
 const ROTATE_MS = 3000
+const sources = allSources.filter((source) => source.lang === 'en')
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -27,9 +28,8 @@ export default function DemoShowcase({
   const [phase, setPhase] = useState<Phase>('idle')
   const [typed, setTyped] = useState('')
   const [runId, setRunId] = useState(0)
-  // Random on first render, so every page load opens on a different podcast.
-  const [sourceIndex, setSourceIndex] = useState(() => pickSourceIndex())
-  const [autoRotate, setAutoRotate] = useState(() => !prefersReducedMotion())
+  const [sourceIndex, setSourceIndex] = useState(0)
+  const [autoRotate, setAutoRotate] = useState(true)
   const [hovered, setHovered] = useState(false)
   const [hidden, setHidden] = useState(false)
   const [notice, setNotice] = useState('')
@@ -39,6 +39,10 @@ export default function DemoShowcase({
   const fileInput = useRef<HTMLInputElement>(null)
 
   const source = sources[sourceIndex]
+
+  useEffect(() => {
+    if (prefersReducedMotion()) setAutoRotate(false)
+  }, [])
 
   // Kick off the demo the first time the panel scrolls into view.
   useEffect(() => {
@@ -85,7 +89,7 @@ export default function DemoShowcase({
    * sourceIndex is a dependency so manual navigation restarts the countdown.
    */
   useEffect(() => {
-    if (phase !== 'done' || !autoRotate || paused || hovered || hidden) return
+    if (sources.length < 2 || phase !== 'done' || !autoRotate || paused || hovered || hidden) return
     const t = window.setTimeout(() => setSourceIndex((i) => (i + 1) % sources.length), ROTATE_MS)
     return () => clearTimeout(t)
   }, [phase, autoRotate, paused, hovered, hidden, sourceIndex])
@@ -128,7 +132,7 @@ export default function DemoShowcase({
   }, [])
 
   const shuffle = useCallback(() => {
-    setSourceIndex((i) => pickSourceIndex(i))
+    setSourceIndex((i) => (i + 1) % sources.length)
     setPhase('done')
   }, [])
 
@@ -250,7 +254,7 @@ export default function DemoShowcase({
           {source.clips.length} {source.clips.length === 1 ? 'clip' : 'clips'} found in a{' '}
           {formatDuration(source.duration)} video, each scored for virality.
         </span>
-        <ul className="demo__dots">
+        {sources.length > 1 && <ul className="demo__dots">
           {sources.map((s, i) => (
             <li key={s.key}>
               <button
@@ -262,18 +266,18 @@ export default function DemoShowcase({
               />
             </li>
           ))}
-        </ul>
-        <button
+        </ul>}
+        {sources.length > 1 && <button
           type="button"
           className="demo__replay"
           onClick={() => setAutoRotate((v) => !v)}
           aria-label={autoRotate ? 'Pause automatic rotation' : 'Resume automatic rotation'}
         >
           {autoRotate ? '❚❚ Pause' : '▶ Play'}
-        </button>
-        <button type="button" className="demo__replay" onClick={shuffle}>
+        </button>}
+        {sources.length > 1 && <button type="button" className="demo__replay" onClick={shuffle}>
           ↻ Try another video
-        </button>
+        </button>}
       </div>
     </section>
   )

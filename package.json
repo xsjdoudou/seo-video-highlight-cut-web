@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node scripts/with-env.mjs vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir .prerender && node scripts/build-canonical-pages.mjs",
     "preview": "node scripts/with-env.mjs vite preview",
     "clip-api": "node scripts/with-env.mjs node scripts/clip-api.mjs",
     "auth-proxy": "node scripts/with-env.mjs node scripts/auth-proxy.mjs",
