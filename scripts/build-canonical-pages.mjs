@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 
 const dist = process.argv[2] || 'dist'
 const serverEntry = process.argv[3] || '.prerender/entry-server.js'
-const { render, pageSeo } = await import(pathToFileURL(resolve(serverEntry)).href)
+const { render, pageSeo, seoPaths } = await import(pathToFileURL(resolve(serverEntry)).href)
 const html = await readFile(join(dist, 'index.html'), 'utf8')
 
 function replaceRequired(input, pattern, replacement) {
@@ -16,7 +16,7 @@ function escapeAttribute(value) {
   return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')
 }
 
-for (const path of ['/', '/pricing', '/how-it-works']) {
+for (const path of seoPaths) {
   const seo = pageSeo(path)
   let page = replaceRequired(html, /<title>[^<]*<\/title>/, `<title>${escapeAttribute(seo.title)}</title>`)
   page = replaceRequired(page, /<link rel="canonical" href="[^"]*" ?\/>/, `<link rel="canonical" href="${seo.canonical}" />`)

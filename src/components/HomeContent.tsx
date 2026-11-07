@@ -1,6 +1,9 @@
+import { homeFaq, homeStructuredData } from '../homeSchema'
+
 export default function HomeContent() {
   return (
     <div className="home-content">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(homeStructuredData).replace(/</g, '\\u003c') }} />
       <section aria-labelledby="home-highlights">
         <h2 id="home-highlights">How the AI finds highlights</h2>
         <p>
@@ -28,6 +31,32 @@ export default function HomeContent() {
           interview. Consider whether the excerpt has a clear beginning and ending, whether a new viewer
           can follow it, and whether the speaker's meaning remains intact outside the longer conversation.
         </p>
+        <p>
+          Think of AI clips as a shortlist, not a finished editorial calendar. A candidate that introduces
+          an unfamiliar topic can invite a new viewer into an episode; a detailed answer can reward people
+          who already follow the subject. Video clipping works best when you consider the speaker's intent
+          alongside the apparent strength of a hook. Listen to the surrounding passage when a statement
+          could be misleading on its own, and keep the full recording available for that check.
+        </p>
+        <p>
+          Scores help you compare candidates, but two clips with similar scores can serve very different
+          purposes. One may have a strong emotional moment, while another offers a concise explanation.
+          Choose the one that fits the post you are making rather than treating the numbers as a ranking of
+          objective quality. The evaluation gives you a starting point for that decision.
+        </p>
+        <p>
+          For a recorded panel, the best standalone passage may be a complete exchange rather than a
+          single speaker's sentence. For an instructional video, a brief explanation may need the preceding
+          question to make its purpose clear. Watch for changes in speaker, references such as “that idea,”
+          and examples that depend on a diagram or earlier demonstration. These details can determine
+          whether a viewer understands the moment without the full video.
+        </p>
+        <p>
+          Keep track of why you selected a candidate. A useful working note might describe the question
+          answered, the intended audience, and any detail that needs verification. Before sharing, compare
+          that note with the actual clip and the surrounding source. This small review step helps you avoid
+          presenting a nuanced conversation as a claim its speaker did not make.
+        </p>
       </section>
 
       <section aria-labelledby="home-workflow">
@@ -51,59 +80,45 @@ export default function HomeContent() {
           angles: one clip might introduce a question, another might explain an answer, and another might
           capture a particularly distinctive point of view. The final selection stays in your hands.
         </p>
+        <p>
+          A clip generator can reduce the time spent searching, especially when you have a backlog of long
+          recordings. Start with a source you know well, compare the suggestions to moments you would have
+          picked yourself, and use that comparison to decide which results are useful. Automatic clipping
+          produces candidates for review; it does not know your publishing calendar, your brand voice, or
+          every detail that matters to your guests.
+        </p>
+        <p>
+          Before processing, check that the recording is accessible and that you have the right to use it.
+          Afterward, review any subtitles and make sure the excerpt does not cut off a qualification or
+          important answer. If a result needs a different framing or an additional introduction, make that
+          change in your usual editing workflow before sharing it.
+        </p>
       </section>
 
       <section aria-labelledby="home-platforms">
         <h2 id="home-platforms">Podcast clips for YouTube Shorts, TikTok and Reels</h2>
         <p>
-          Short clips give potential listeners a way to discover a podcast before committing to a full
-          episode. A concise answer or a compelling exchange can introduce the guest, establish the topic,
-          and give someone a reason to learn more. You can also use highlights to revisit an older episode
-          when a subject becomes relevant again.
-        </p>
-        <p>
-          When choosing a clip for YouTube Shorts, TikTok, or Instagram Reels, consider what a viewer needs
-          to understand without hearing the rest of the conversation. Listen for references to earlier
-          questions, names, or examples that may need context. Check subtitles for names and technical
-          terms, and make sure the opening communicates why the moment matters. Different communities
-          respond to different ideas, so the same episode may yield several useful clips.
-        </p>
-        <p>
-          After downloading, review the video against the current requirements of the platform where you
-          intend to post. You remain responsible for any final edits, captions, descriptions, and publishing.
-          One-click publishing to social platforms is planned for a future release; it is not part of the
-          current workflow. Always use video that you have the right to process and share.
+          Podcast clips can introduce an episode through a concise answer or memorable exchange. Before
+          sharing shorts on YouTube, TikTok, or Reels, review the context, subtitles, and current platform
+          requirements. Download and publish the clips yourself; automatic publishing is not currently
+          available. See the <a href="/ai-shorts-generator">AI shorts generator</a> guide for more on
+          reviewing the finished output.
         </p>
       </section>
 
       <section aria-labelledby="home-faq">
         <h2 id="home-faq">FAQ</h2>
-        <h3>What can I use as a source?</h3>
-        <p>
-          You can paste a YouTube link or upload a video file from your device. Podcasts are one use case,
-          but interviews, discussions, and educational recordings can also contain useful standalone
-          moments. Make sure you have permission to use the source and publish any resulting clips.
-        </p>
-        <h3>How do credits work?</h3>
-        <p>
-          Processing is charged at two credits per minute of source video. The estimated usage appears
-          before you start, based on the detected duration. Credit packs are one-time purchases, not
-          automatically renewing subscriptions. Visit the <a href="/pricing">pricing page</a> for current
-          packages and details.
-        </p>
-        <h3>Can I add subtitles?</h3>
-        <p>
-          The processing options include adding subtitles, as well as an option to remove subtitles already
-          burned into the source. Review the result before publishing: names, terminology, timing, and
-          readability are worth checking against the original recording.
-        </p>
-        <h3>Will every suggested clip be ready to publish?</h3>
-        <p>
-          Not necessarily. AI suggestions and scores help you find candidates, but they cannot decide what
-          is appropriate for your audience or guarantee a result. Watch each clip, check its context and
-          accuracy, and make any changes you need before sharing it.
-        </p>
+        {homeFaq.map(({ question, answer }) => (
+          <div key={question}>
+            <h3>{question}</h3>
+            <p>{answer}</p>
+          </div>
+        ))}
+        <p><a href="/pricing">View credit packages</a></p>
       </section>
+      <nav aria-label="Explore video tools">
+        <a href="/ai-shorts-generator">AI shorts generator</a>
+      </nav>
     </div>
   )
 }

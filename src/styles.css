@@ -2374,6 +2374,24 @@ button {
   text-decoration: underline;
 }
 
+.generator-page {
+  padding-top: 24px;
+}
+
+.generator-page h1 {
+  margin: 32px 0 20px;
+  font-size: 42px;
+  line-height: 1.15;
+}
+
+.generator-page__video {
+  display: block;
+  width: min(100%, 360px);
+  max-height: 640px;
+  margin: 24px 0;
+  background: #111;
+}
+
 .footer {
   display: flex;
   align-items: center;

@@ -11,7 +11,13 @@ const pages: Record<string, { title: string; description: string }> = {
     title: 'How It Works – Long Video to Shorts in 3 Steps',
     description: 'Upload a video or paste a YouTube link, let AI find highlights, and review and download your shorts.',
   },
+  '/ai-shorts-generator': {
+    title: 'AI Shorts Generator for Long Videos and Podcasts – Video Highlight',
+    description: 'Generate short video candidates from long recordings, review AI-selected highlights, and download clips for social media.',
+  },
 }
+
+export const seoPaths = Object.keys(pages)
 
 export function pageSeo(path: string) {
   const canonicalPath = Object.hasOwn(pages, path) ? path : '/'
