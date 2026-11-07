@@ -337,6 +337,9 @@ export function addPaymentRecharge({ user, credits, amount = 0, currency = 'USD'
   const key = String(paymentId || orderId || '').trim()
   if (!key) throw new Error('paymentId 不能为空')
   return serialize(async () => {
+    const recharges = await readJsonLines(RECHARGES_FILE)
+    const recorded = recharges.find((recharge) => recharge.paymentId === key)
+    if (recorded) return { created: false, recharge: recorded }
     const events = await readJsonLines(PAYMENT_EVENTS_FILE)
     const existing = events.find((event) => event.paymentId === key)
     if (existing?.recharge) return { created: false, recharge: existing.recharge }

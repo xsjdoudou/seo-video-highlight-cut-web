@@ -17,6 +17,7 @@
     "check:oss": "node scripts/with-env.mjs python3 scripts/oss_upload.py --check"
   },
   "dependencies": {
+    "@waffo/pancake-ts": "^0.28.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

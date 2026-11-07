@@ -55,6 +55,7 @@ import https from 'node:https'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { WaffoPancake, verifyWebhook } from '@waffo/pancake-ts'
 
 import {
   addAssets,
@@ -123,6 +124,8 @@ const YOUTUBE_API_KEY = env('YOUTUBE_API_KEY', '').trim()
 const WAFFO_API_BASE = String(env('WAFFO_API_BASE', 'https://api.waffo.ai')).replace(/\/+$/, '')
 const WAFFO_ENVIRONMENT = env('WAFFO_ENVIRONMENT', 'prod')
 const WAFFO_MERCHANT_ID = env('WAFFO_MERCHANT_ID', '').trim()
+const WAFFO_STORE_ID = env('WAFFO_STORE_ID', '').trim()
+const WAFFO_PRIVATE_KEY = env('WAFFO_PRIVATE_KEY', '')
 const WAFFO_PRIVATE_KEY_FILE = env('WAFFO_PRIVATE_KEY_FILE', '')
 const WAFFO_WEBHOOK_PUBLIC_KEY_FILE = env('WAFFO_WEBHOOK_PUBLIC_KEY_FILE', '')
 const WAFFO_CURRENCY = env('WAFFO_CURRENCY', 'USD').toUpperCase()
@@ -152,7 +155,7 @@ const WAFFO_PLANS = [
 ]
 
 function waffoConfigured() {
-  return Boolean(WAFFO_MERCHANT_ID && WAFFO_PRIVATE_KEY_FILE && WAFFO_WEBHOOK_PUBLIC_KEY_FILE)
+  return Boolean(WAFFO_MERCHANT_ID && WAFFO_STORE_ID && (WAFFO_PRIVATE_KEY || WAFFO_PRIVATE_KEY_FILE) && ['test', 'prod'].includes(WAFFO_ENVIRONMENT))
 }
 
 /** 上传文件保留多久，超过就在下次上传时顺手清掉。 */
@@ -1484,14 +1487,14 @@ async function handleAssets(req, res) {
   sendJson(res, 200, { assets, total: assets.length })
 }
 
-function publicBillingPlans() {
+function publicBillingPlans(configured) {
   return WAFFO_PLANS.map(({ id, name, credits, price, productId }) => ({
     id,
     name,
     credits,
     price,
     currency: WAFFO_CURRENCY,
-    available: Boolean(productId && waffoConfigured()),
+    available: Boolean(productId && configured),
   }))
 }
 
@@ -1499,34 +1502,34 @@ function findBillingPlan(id) {
   return WAFFO_PLANS.find((plan) => plan.id === String(id || '').trim()) || null
 }
 
-async function waffoRequest(pathname, body) {
-  if (!WAFFO_MERCHANT_ID || !WAFFO_PRIVATE_KEY_FILE) {
+async function waffoClient() {
+  if (!waffoConfigured()) {
     throw new ApiError('Payments are not configured yet. Please try again later.', 503)
   }
-  const payload = JSON.stringify(body)
-  // Waffo API-key signatures use Unix seconds; webhook timestamps use ms.
-  const timestamp = String(Math.floor(Date.now() / 1000))
-  const bodyHash = crypto.createHash('sha256').update(payload).digest('base64')
-  const canonical = `POST\n${pathname}\n${timestamp}\n${bodyHash}`
-  let privateKey
   try {
-    privateKey = await fsp.readFile(WAFFO_PRIVATE_KEY_FILE, 'utf8')
-  } catch {
+    const privateKey = WAFFO_PRIVATE_KEY || await fsp.readFile(WAFFO_PRIVATE_KEY_FILE, 'utf8')
+    return new WaffoPancake({
+      merchantId: WAFFO_MERCHANT_ID,
+      privateKey,
+      environment: WAFFO_ENVIRONMENT,
+      baseUrl: WAFFO_API_BASE,
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+    })
+  } catch (error) {
+    console.error('[clip-api] Waffo private key is missing or invalid:', error.code || error.message)
     throw new ApiError('Payments are not configured yet. Please try again later.', 503)
   }
-  const signature = crypto.sign('sha256', Buffer.from(canonical), privateKey).toString('base64')
-  return requestJson(`${WAFFO_API_BASE}${pathname}`, body, {
-    timeoutMs: 15_000,
-    extraHeaders: {
-      'X-Merchant-Id': WAFFO_MERCHANT_ID,
-      'X-Timestamp': timestamp,
-      'X-Signature': signature,
-    },
-  })
 }
 
 async function handleBillingPlans(req, res) {
-  sendJson(res, 200, { configured: waffoConfigured(), plans: publicBillingPlans() })
+  let configured = false
+  try {
+    await waffoClient()
+    configured = true
+  } catch {
+    // Plans remain visible while invalid credentials disable checkout.
+  }
+  sendJson(res, 200, { configured, plans: publicBillingPlans(configured) })
 }
 
 async function handleBillingCheckout(req, res) {
@@ -1537,80 +1540,77 @@ async function handleBillingCheckout(req, res) {
   if (!waffoConfigured()) throw new ApiError('Payments are not configured yet. Please try again later.', 503)
   if (!plan?.productId) throw new ApiError('That credit package is not available yet.', 503)
 
-  const pathName = '/v1/actions/checkout/create-session'
-  const result = await waffoRequest(pathName, {
-    productId: plan.productId,
-    currency: WAFFO_CURRENCY,
-    buyerEmail: email,
-    successUrl: WAFFO_SUCCESS_URL,
-    darkMode: true,
-    language: 'en',
-    metadata: {
+  const client = await waffoClient()
+  let result
+  try {
+    result = await client.checkout.authenticated.create({
       productId: plan.productId,
-      planId: plan.id,
-      credits: String(plan.credits),
-      userEmail: email,
-    },
-    orderMerchantExternalId: `vh_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,
-  })
-  const checkoutUrl = result?.data?.checkoutUrl
+      currency: WAFFO_CURRENCY,
+      buyerIdentity: user.id,
+      buyerEmail: email,
+      successUrl: WAFFO_SUCCESS_URL,
+      darkMode: true,
+      language: 'en',
+      metadata: {
+        productId: plan.productId,
+        planId: plan.id,
+        credits: String(plan.credits),
+        userEmail: email,
+      },
+      orderMerchantExternalId: `vh_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,
+    })
+  } catch (error) {
+    console.error('[clip-api] Waffo checkout failed:', error.status || error.code || 'unknown')
+    throw new ApiError('Checkout is temporarily unavailable. Please try again later.', 502)
+  }
+  const checkoutUrl = result?.checkoutUrl
   if (typeof checkoutUrl !== 'string' || !/^https:\/\//.test(checkoutUrl)) {
     throw new ApiError('Waffo did not return a valid checkout link.', 502)
   }
   sendJson(res, 200, { checkoutUrl })
 }
 
-function parseWaffoSignature(header) {
-  const values = {}
-  for (const part of String(header || '').split(',')) {
-    const [key, ...rest] = part.split('=')
-    if (key && rest.length) values[key.trim()] = rest.join('=').trim()
-  }
-  return values
-}
-
 async function verifyWaffoWebhook(rawBody, header) {
-  if (!WAFFO_WEBHOOK_PUBLIC_KEY_FILE) return false
-  const { t, v1 } = parseWaffoSignature(header)
-  const timestamp = Number(t)
-  if (!t || !v1 || !Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 45 * 60 * 1000) return false
-  let publicKey
+  if (!['test', 'prod'].includes(WAFFO_ENVIRONMENT)) return null
   try {
-    publicKey = await fsp.readFile(WAFFO_WEBHOOK_PUBLIC_KEY_FILE, 'utf8')
+    const publicKey = WAFFO_WEBHOOK_PUBLIC_KEY_FILE
+      ? await fsp.readFile(WAFFO_WEBHOOK_PUBLIC_KEY_FILE, 'utf8')
+      : undefined
+    return verifyWebhook(rawBody.toString('utf8'), header, {
+      environment: WAFFO_ENVIRONMENT,
+      ...(publicKey ? { publicKey } : {}),
+    })
   } catch {
-    return false
+    return null
   }
-  return crypto.verify('RSA-SHA256', Buffer.from(`${t}.${rawBody.toString('utf8')}`), publicKey, Buffer.from(v1, 'base64'))
 }
 
 async function handleWaffoWebhook(req, res) {
   const rawBody = await readRawBody(req)
   const signature = req.headers['x-waffo-signature']
-  if (!(await verifyWaffoWebhook(rawBody, signature))) throw new ApiError('Invalid Waffo webhook signature.', 401)
-
-  let event
-  try {
-    event = JSON.parse(rawBody.toString('utf8'))
-  } catch {
-    throw new ApiError('Invalid Waffo webhook body.', 400)
-  }
+  const event = await verifyWaffoWebhook(rawBody, signature)
+  if (!event) throw new ApiError('Invalid Waffo webhook signature.', 401)
+  if (!WAFFO_STORE_ID || event.storeId !== WAFFO_STORE_ID) throw new ApiError('Waffo webhook store mismatch.', 400)
+  if (event.mode !== WAFFO_ENVIRONMENT) throw new ApiError('Waffo webhook environment mismatch.', 400)
   if (event.eventType !== 'order.completed') {
     sendJson(res, 200, { received: true, ignored: true })
     return
   }
-  if (event.mode && event.mode !== WAFFO_ENVIRONMENT) throw new ApiError('Waffo webhook environment mismatch.', 400)
-
   const data = event.data || {}
   const metadata = data.orderMetadata || {}
   const plan = findBillingPlan(metadata.planId)
   const credits = Number(metadata.credits)
   const email = String(metadata.userEmail || data.buyerEmail || '').trim().toLowerCase()
   const paymentId = String(data.paymentId || event.eventId || event.id || '').trim()
-  if (!plan || plan.credits !== credits || !paymentId || !email) {
+  if (!plan || plan.credits !== credits || metadata.productId !== plan.productId
+    || (data.productId && data.productId !== plan.productId) || !paymentId || !email) {
     throw new ApiError('Waffo payment metadata is incomplete.', 422)
   }
   const user = await findUserByEmail(email)
   if (!user) throw new ApiError('The Waffo buyer does not have a local account.', 422)
+  if (data.merchantProvidedBuyerIdentity && data.merchantProvidedBuyerIdentity !== user.id) {
+    throw new ApiError('Waffo buyer identity mismatch.', 422)
+  }
 
   const result = await addPaymentRecharge({
     user,

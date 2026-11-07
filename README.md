@@ -65,13 +65,19 @@ checkout session → 浏览器跳转 Waffo → Waffo 向 `/api/webhooks/waffo` �
 
 在 Waffo Dashboard 中创建三个一次性产品，并将生产环境的 Product ID 填入
 `.env`/`web.env` 中的 `WAFFO_PLAN_*_PRODUCT_ID`；`*_CREDITS` 必须与该产品实际售卖的
-积分一致。把 API 私钥和 Waffo Webhook Public Key 保存到服务器上的文件，文件权限设为
-`600`，不要写进仓库或 systemd unit：
+积分一致。填写 `WAFFO_MERCHANT_ID`、`WAFFO_STORE_ID` 和 `WAFFO_ENVIRONMENT`。
+把 API 私钥保存到服务器文件，不要写进仓库或 systemd unit。服务以 `seoweb` 身份运行时，
+例如可让文件属于 `root:seoweb` 并设为 `640`；先确保运行身份和目录访问权限匹配：
 
 ```bash
-sudo chmod 600 /etc/seo-video-highlight/waffo-private-key.pem
-sudo chmod 600 /etc/seo-video-highlight/waffo-webhook-public-key.pem
+sudo chown root:seoweb /etc/seo-video-highlight/waffo-private-key.pem
+sudo chmod 640 /etc/seo-video-highlight/waffo-private-key.pem
+sudo -u seoweb openssl pkey -in /etc/seo-video-highlight/waffo-private-key.pem -noout -check
 ```
+
+SDK 内置测试和生产 webhook 公钥；`WAFFO_WEBHOOK_PUBLIC_KEY_FILE` 留空即可使用内置
+公钥。仅在 Waffo 要求使用自定义公钥时填写路径，并确保服务用户可读取。密钥支持标准
+PEM 和 SDK 支持的其他 RSA 格式；不能使用产品 ID、公钥或占位符代替私钥。
 
 在 Waffo 的 Webhooks 设置中添加：
 
@@ -81,8 +87,9 @@ https://video-highlight.com/api/webhooks/waffo
 环境：Production
 ```
 
+部署时需在运行 `clip-api` 的目录安装依赖并更新服务端脚本，不能只同步 `dist`。
 然后重启 `clip-api`。用 `GET /api/billing/plans` 检查套餐的 `available` 是否为
-`true`，再用 Waffo Test 环境和测试 Product ID 完成一次支付验证。生产环境的
+`true`（仅代表本地配置和私钥可解析，不代表 Waffo 验证通过），再用 Waffo Test 环境和测试 Product ID 完成一次支付验证。生产环境的
 `WAFFO_ENVIRONMENT`、Product ID、Merchant ID 和 webhook 公钥必须成套配置，不能混用。
 
 两台机器分别安装 unit 后启动：
