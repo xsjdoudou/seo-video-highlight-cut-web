@@ -9,24 +9,24 @@ export default function HomeContent() {
         <p>
           A long conversation can contain a dozen ideas worth sharing, but finding them often means watching
           the same recording over and over. Video Highlight helps narrow that search. It analyzes your source
-          video and identifies moments that may work as short clips, giving you a starting point for review
+          video and identifies moments that may work as AI clips, giving you a starting point for review
           instead of asking you to find every highlight manually.
         </p>
         <p>
-          The selection process looks for qualities that matter when a viewer has not seen the full episode:
+          The clip generator looks for qualities that matter when a viewer has not seen the full episode:
           a strong opening, a clear idea, an engaging delivery, and enough context to make the moment
           understandable on its own. A surprising observation, a useful explanation, or a memorable quote
           might make a good candidate. The goal is to surface a range of moments you can evaluate for your
           own audience.
         </p>
         <p>
-          Each suggested clip comes with a score and an evaluation. These are useful signals, not a promise
+          Each suggested clip comes with a score and an evaluation. These video clipping signals are not a promise
           of views or a substitute for your judgment. Watch the clip, check that it represents the speaker
           fairly, and decide whether the idea fits the story you want to tell. You know your audience and
           your source material best.
         </p>
         <p>
-          When comparing suggestions, look beyond the highest score. A practical answer may serve an
+          When comparing automatic clipping suggestions, look beyond the highest score. A practical answer may serve an
           audience looking for advice, while a surprising question may be a better introduction to an
           interview. Consider whether the excerpt has a clear beginning and ending, whether a new viewer
           can follow it, and whether the speaker's meaning remains intact outside the longer conversation.
@@ -39,13 +39,14 @@ export default function HomeContent() {
           could be misleading on its own, and keep the full recording available for that check.
         </p>
         <p>
-          Scores help you compare candidates, but two clips with similar scores can serve very different
+          Scores help you compare candidates, but two clips from the clip generator can serve very different
           purposes. One may have a strong emotional moment, while another offers a concise explanation.
           Choose the one that fits the post you are making rather than treating the numbers as a ranking of
           objective quality. The evaluation gives you a starting point for that decision.
         </p>
         <p>
-          For a recorded panel, the best standalone passage may be a complete exchange rather than a
+          When reviewing automatic clipping results from a recorded panel, the best passage may be a
+          complete exchange rather than a
           single speaker's sentence. For an instructional video, a brief explanation may need the preceding
           question to make its purpose clear. Watch for changes in speaker, references such as “that idea,”
           and examples that depend on a diagram or earlier demonstration. These details can determine

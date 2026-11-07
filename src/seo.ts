@@ -12,8 +12,8 @@ const pages: Record<string, { title: string; description: string }> = {
     description: 'Upload a video or paste a YouTube link, let AI find highlights, and review and download your shorts.',
   },
   '/ai-shorts-generator': {
-    title: 'AI Shorts Generator for Long Videos and Podcasts – Video Highlight',
-    description: 'Generate short video candidates from long recordings, review AI-selected highlights, and download clips for social media.',
+    title: 'AI Shorts Generator – Clips from Long Videos & Podcasts',
+    description: 'AI shorts generator that turns long videos and podcasts into scored clip candidates you can review and download.',
   },
 }
 
