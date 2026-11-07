@@ -33,6 +33,14 @@ export default function App() {
     return null
   })
 
+  useEffect(() => {
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+    if (canonical) {
+      const path = pricing ? PRICING_PATH : howItWorks ? HOW_IT_WORKS_PATH : '/'
+      canonical.href = `https://video-highlight.com${path}`
+    }
+  }, [pricing, howItWorks])
+
   // The job only lives in memory, so a reload or a deep link to /create has
   // nothing to show: send those visitors back to the landing page.
   useEffect(() => {
